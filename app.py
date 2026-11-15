@@ -2,10 +2,11 @@ import os
 import re
 import json
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -13,8 +14,15 @@ from playwright.sync_api import sync_playwright
 import openpyxl
 
 import main
+import telegram_bot
 
-app = FastAPI(title="Job Auto-Flow Studio")
+@asynccontextmanager
+async def _lifespan(_app):
+    telegram_bot.start_poller()
+    yield
+
+
+app = FastAPI(title="Job Auto-Flow Studio", lifespan=_lifespan)
 
 BASE_DIR = Path(__file__).parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -43,16 +51,18 @@ def log_msg(msg: str):
 
 
 def load_state() -> dict:
-    if STATE_FILE.exists():
-        try:
-            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {"jobs": []}
+    with telegram_bot.STATE_LOCK:
+        if STATE_FILE.exists():
+            try:
+                return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {"jobs": []}
 
 
 def save_state(state: dict):
-    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    with telegram_bot.STATE_LOCK:
+        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def update_env_var(key: str, value: str):
@@ -192,6 +202,7 @@ def cancel_task():
 # ---------------------------------------------------------
 def _run_scan_worker(rescan_existing: bool):
     TASK_STATE.update({"running": True, "step": "scan", "progress": 5, "logs": [], "cancel": False})
+    telegram_bot.SCAN_BUSY.set()
     try:
         profile = main.analyze_cv("cv.pdf")
         wb, ws = main.init_excel()
@@ -276,9 +287,12 @@ def _run_scan_worker(rescan_existing: bool):
         save_state({"jobs": final_jobs})
         TASK_STATE["progress"] = 100
         log_msg(f"Skan tamamlandı! {len(final_jobs)} vakansiya siyahıya əlavə edildi.")
+        telegram_bot.SCAN_BUSY.clear()
+        telegram_bot.notify_matches(final_jobs, log=log_msg)
     except Exception as e:
         log_msg(f"XƏTA: {e}")
     finally:
+        telegram_bot.SCAN_BUSY.clear()
         TASK_STATE["running"] = False
 
 
@@ -473,6 +487,17 @@ def execute_send_and_export(payload: SendPayload):
     }
 
 
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    expected = (os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+    received = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if not expected or received != expected:
+        raise HTTPException(status_code=403, detail="Webhook imzası uyğun deyil.")
+    update = await request.json()
+    threading.Thread(target=telegram_bot.handle_update, args=(update,), daemon=True).start()
+    return {"ok": True}
+
+
 @app.get("/api/export/excel")
 def download_excel():
     if not main.EXCEL_PATH.exists():
@@ -487,4 +512,4 @@ def download_excel():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("app:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")), reload=False)

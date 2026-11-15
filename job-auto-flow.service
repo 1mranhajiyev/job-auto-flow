@@ -1,0 +1,15 @@
+[Unit]
+Description=Job Auto-Flow
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/imranh/job-auto-flow
+ExecStart=/home/imranh/job-auto-flow/.venv/bin/python app.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+
+# Skanı səhər işə salmaq üçün crontab sətri:
+# 0 9 * * * curl -s -X POST http://127.0.0.1:8000/api/step2/scan -H 'Content-Type: application/json' -d '{"rescan_existing":false}'

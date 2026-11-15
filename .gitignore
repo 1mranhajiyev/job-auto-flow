@@ -6,6 +6,7 @@ output/
 applications.xlsx
 profile.json
 state.json
+state.json.enc
 cv.pdf
 information/video/node_modules/
 information/video/.remotion/

@@ -1,0 +1,56 @@
+name: Auto Job Scanner
+
+on:
+  schedule:
+    # Bakı vaxtı ilə 10:00 və 16:00 (UTC+4)
+    - cron: "0 6,12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: job-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Restore profile
+        env:
+          PROFILE_JSON: ${{ secrets.PROFILE_JSON }}
+        run: python -c 'import os; from pathlib import Path; Path("profile.json").write_text(os.environ["PROFILE_JSON"], encoding="utf-8")'
+
+      - name: Run scanner
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL_NAME: ${{ secrets.LLM_MODEL_NAME }}
+          MIN_MATCH_SCORE: ${{ secrets.MIN_MATCH_SCORE }}
+          MAX_JOBS_PER_SOURCE: ${{ secrets.MAX_JOBS_PER_SOURCE }}
+          MAX_VACANCY_AGE_DAYS: ${{ secrets.MAX_VACANCY_AGE_DAYS }}
+          DRY_RUN: ${{ secrets.DRY_RUN }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          FATHER_NAME: ${{ secrets.FATHER_NAME }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATE_FERNET_KEY: ${{ secrets.STATE_FERNET_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scan_notify.py

@@ -1,0 +1,421 @@
+"""Telegram bildirişi və telefondan təsdiq.
+
+80% və yuxarı uyğunluqda mesaj gedir. Altındakı düymələr:
+Göndər — CV hazırlayır və e-poçtu göndərir (test rejimində yalnız yoxlayır).
+Keç — elanı siyahıdan çıxarır.
+"""
+
+import json
+import os
+import re
+import threading
+import time
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+
+import main
+
+BASE_DIR = Path(__file__).parent
+STATE_FILE = BASE_DIR / "state.json"
+STATE_LOCK = threading.Lock()
+ACTION_LOCK = threading.Lock()
+SCAN_BUSY = threading.Event()
+
+_poller_started = False
+_offset = 0
+
+
+def token() -> str:
+    return (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+
+
+def chat_id() -> str:
+    return (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
+
+
+def enabled() -> bool:
+    return bool(token() and chat_id())
+
+
+def _api(method: str, payload: dict | None = None, timeout: int = 20) -> dict:
+    url = f"https://api.telegram.org/bot{token()}/{method}"
+    data = json.dumps(payload or {}).encode()
+    request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = json.load(response)
+    except Exception as exc:
+        secret = token()
+        message = str(exc).replace(secret, "***") if secret else str(exc)
+        raise RuntimeError(message) from None
+    if not body.get("ok"):
+        raise RuntimeError(body.get("description") or "Telegram xətası")
+    return body
+
+
+def _html(value: str) -> str:
+    return (
+        (value or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def read_state() -> dict:
+    with STATE_LOCK:
+        if not STATE_FILE.exists():
+            return {"jobs": []}
+        try:
+            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {"jobs": []}
+
+
+def write_state(state: dict):
+    with STATE_LOCK:
+        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _job_message(job: dict) -> str:
+    email = job.get("hr_email") or "e-poçt yoxdur, əl ilə müraciət"
+    posted = job.get("posted_at") or ""
+    mode = "Test rejimi: məktub göndərilmir." if main.DRY_RUN else "Göndər düyməsi müraciəti təsdiqləyir."
+    lines = [
+        f"<b>{job.get('match_score', 0)}% uyğunluq</b>",
+        _html(job.get("company") or "Şirkət"),
+        _html(job.get("title") or "Vakansiya"),
+    ]
+    if posted:
+        lines.append(_html(posted))
+    lines.append(_html(email))
+    href = _html(job.get("job_url") or "").replace('"', "&quot;")
+    lines.append(f'<a href="{href}">Elanı aç</a>')
+    lines.append(mode)
+    return "\n".join(lines)
+
+
+def _keyboard(job_id: str) -> dict:
+    return {
+        "inline_keyboard": [[
+            {"text": "Göndər ✅", "callback_data": f"go:{job_id}"},
+            {"text": "Keç ❌", "callback_data": f"skip:{job_id}"},
+        ]]
+    }
+
+
+def notify_job(job: dict) -> bool:
+    if int(job.get("match_score") or 0) < main.MIN_SCORE:
+        return False
+    if not token() or not chat_id():
+        return False
+    _api("sendMessage", {
+        "chat_id": chat_id(),
+        "text": _job_message(job),
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+        "reply_markup": _keyboard(job["id"]),
+    })
+    return True
+
+
+def notify_matches(jobs: list[dict], log=print) -> int:
+    """Həddi keçən hər elan üçün ayrı mesaj göndərir."""
+    if not token():
+        log("Telegram bağlı deyil: TELEGRAM_BOT_TOKEN boşdur.")
+        return 0
+    if not chat_id():
+        log("Telegram chat ID boşdur. Bota /start yazın, ID-ni .env-ə əlavə edin.")
+        return 0
+    sent = 0
+    for job in jobs:
+        if int(job.get("match_score") or 0) < main.MIN_SCORE:
+            continue
+        try:
+            if notify_job(job):
+                sent += 1
+        except Exception as exc:
+            log(f"Telegram mesajı getmədi ({job.get('title', '')[:40]}): {exc}")
+    if sent:
+        log(f"Telegram: {sent} bildiriş göndərildi.")
+    else:
+        log("Telegram: həddi keçən yeni elan yoxdur.")
+    return sent
+
+
+def _find_job(job_id: str) -> dict | None:
+    for job in read_state().get("jobs", []):
+        if job.get("id") == job_id:
+            return job
+    import state_sync
+    if not state_sync.enabled():
+        return None
+    try:
+        remote = state_sync.load()
+    except Exception as exc:
+        print(f"Uzaq siyahı açılmadı: {exc}")
+        return None
+    for job in remote.get("jobs") or []:
+        if job.get("id") == job_id:
+            return job
+    return None
+
+
+def _patch_local(job_id: str, **fields) -> dict | None:
+    with STATE_LOCK:
+        if not STATE_FILE.exists():
+            return None
+        try:
+            state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        found = None
+        for job in state.get("jobs", []):
+            if job.get("id") == job_id:
+                job.update(fields)
+                found = job
+                break
+        if found:
+            STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        return found
+
+
+def _patch_job(job_id: str, **fields) -> dict | None:
+    found = _patch_local(job_id, **fields)
+    if found:
+        return found
+    import state_sync
+    if not state_sync.enabled():
+        return None
+    try:
+        return state_sync.patch_job(job_id, **fields)
+    except Exception as exc:
+        print(f"Uzaq siyahı yenilənmədi: {exc}")
+        return None
+
+
+def _answer(callback_id: str, text: str):
+    try:
+        _api("answerCallbackQuery", {"callback_query_id": callback_id, "text": text[:180]})
+    except Exception:
+        pass
+
+
+def _edit(message: dict, text: str, job_id: str | None = None):
+    payload = {
+        "chat_id": message["chat"]["id"],
+        "message_id": message["message_id"],
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+        "reply_markup": _keyboard(job_id) if job_id else {"inline_keyboard": []},
+    }
+    try:
+        _api("editMessageText", payload)
+    except Exception:
+        pass
+
+
+def _record_excel(job: dict, channel: str, target: str, status: str):
+    wb, ws = main.init_excel()
+    existing = main.get_existing_urls(ws)
+    url = (job.get("job_url") or "").rstrip("/")
+    if url in existing:
+        return
+    ws.append([
+        datetime.now().strftime("%Y-%m-%d %H:%M"),
+        job.get("source") or "",
+        job.get("company") or "",
+        job.get("title") or "",
+        job.get("match_score") or 0,
+        channel,
+        target,
+        status,
+        job.get("pdf_path") or "-",
+        job.get("job_url") or "",
+    ])
+    for col in ws.columns:
+        width = max(len(str(cell.value or "")) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(width + 4, 45)
+    wb.save(main.EXCEL_PATH)
+
+
+def _ensure_cv(job: dict) -> dict:
+    pdf = Path(job["pdf_path"]) if job.get("pdf_path") else None
+    if job.get("cv_ready") and pdf and pdf.exists() and job.get("cover_letter"):
+        return job
+    profile = main.analyze_cv("cv.pdf")
+    from playwright.sync_api import sync_playwright
+
+    tailored = main.tailor_single_job(profile, job)
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", f"{job.get('company')}_{job.get('title')}")[:50]
+    pdf_file = main.OUTPUT_DIR / f"CV_{safe_name}.pdf"
+    launch_kwargs = {
+        "headless": True,
+        "args": ["--disable-blink-features=AutomationControlled", "--disable-http2"],
+    }
+    if os.path.exists("/usr/bin/chromium"):
+        launch_kwargs["executable_path"] = "/usr/bin/chromium"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(**launch_kwargs)
+        try:
+            main.render_tailored_pdf(browser, profile, tailored, pdf_file)
+        finally:
+            browser.close()
+    return _patch_job(
+        job["id"],
+        cv_ready=True,
+        pdf_path=str(pdf_file),
+        pdf_url=f"/output/{pdf_file.name}",
+        email_subject=tailored.get("email_subject") or f"Müraciət: {job.get('title')}",
+        cover_letter=tailored.get("cover_letter") or "",
+        status="CV Hazırdır",
+    ) or job
+
+
+def _approve(job_id: str, message: dict):
+    job = _find_job(job_id)
+    if not job:
+        _edit(message, "Bu elan siyahıda tapılmadı.")
+        return
+    status = str(job.get("status") or "")
+    if status.startswith(("Applied", "Dry-Run", "Keçildi", "CV hazırdır")):
+        _edit(message, _job_message(job) + f"\n\n<b>{_html(status)}</b>")
+        return
+    _edit(message, _job_message(job) + "\n\nCV hazırlanır...")
+    try:
+        job = _ensure_cv(job)
+    except Exception as exc:
+        failed = _patch_job(job_id, status=f"CV xətası: {str(exc)[:80]}") or job
+        _edit(message, _job_message(failed) + f"\n\n<b>CV hazırlanmadı:</b> {_html(str(exc)[:180])}", job_id)
+        return
+    email = (job.get("hr_email") or "").strip()
+    pdf = Path(job["pdf_path"]) if job.get("pdf_path") else None
+    if email and pdf and pdf.exists():
+        try:
+            result = main.apply_via_email(
+                email,
+                job.get("email_subject") or f"Müraciət: {job.get('title')}",
+                job.get("cover_letter") or "",
+                pdf,
+            )
+        except Exception as exc:
+            result = f"Email xətası: {str(exc)[:80]}"
+        channel, target = "email", email
+    else:
+        result = "CV hazırdır, e-poçt yoxdur. Elanı əl ilə göndərin."
+        channel, target = "manual", job.get("job_url") or ""
+    updated = _patch_job(job_id, status=result, selected=True) or job
+    _record_excel(updated, channel, target, result)
+    retry = job_id if result.startswith("Email xətası") else None
+    _edit(message, _job_message(updated) + f"\n\n<b>{_html(result)}</b>", retry)
+
+
+def _skip(job_id: str, message: dict):
+    job = _patch_job(job_id, selected=False, status="Keçildi (Telegram)")
+    if not job:
+        _edit(message, "Bu elan siyahıda tapılmadı.")
+        return
+    _edit(message, _job_message(job) + "\n\n<b>Keçildi.</b>")
+
+
+def _handle_callback(query: dict):
+    message = query.get("message") or {}
+    sender = str((query.get("from") or {}).get("id") or "")
+    chat = str((message.get("chat") or {}).get("id") or "")
+    if not chat_id():
+        _answer(query.get("id") or "", "Əvvəl .env-də TELEGRAM_CHAT_ID yazın.")
+        return
+    if chat != chat_id() and sender != chat_id():
+        _answer(query.get("id") or "", "Bu bot başqa söhbətə bağlıdır.")
+        return
+    data = str(query.get("data") or "")
+    action, _, job_id = data.partition(":")
+    if action not in ("go", "skip") or not job_id:
+        _answer(query.get("id") or "", "Köhnə düymə.")
+        return
+    if SCAN_BUSY.is_set():
+        _answer(query.get("id") or "", "Skan gedir. Bitəndən sonra yenidən basın.")
+        return
+    if not ACTION_LOCK.acquire(blocking=False):
+        _answer(query.get("id") or "", "Başqa elan hazırlanır.")
+        return
+    try:
+        _answer(query.get("id") or "", "Qəbul olundu.")
+        if action == "skip":
+            _skip(job_id, message)
+        else:
+            _approve(job_id, message)
+    finally:
+        ACTION_LOCK.release()
+
+
+def _handle_message(message: dict):
+    text = (message.get("text") or "").strip()
+    chat = str((message.get("chat") or {}).get("id") or "")
+    if not text.startswith("/start"):
+        return
+    if chat_id() and chat != chat_id():
+        return
+    if chat_id():
+        reply = f"Bu söhbətə {main.MIN_SCORE}% və yuxarı uyğun elanlar gələcək."
+    else:
+        reply = f"Söhbət ID: {chat}\nBunu .env faylında TELEGRAM_CHAT_ID kimi yazın və proqramı yenidən başladın."
+    try:
+        _api("sendMessage", {"chat_id": chat, "text": reply})
+    except Exception:
+        pass
+
+
+def handle_update(update: dict):
+    if "callback_query" in update:
+        _handle_callback(update["callback_query"])
+    elif "message" in update:
+        _handle_message(update["message"])
+
+
+def _poll_once():
+    global _offset
+    body = _api("getUpdates", {"offset": _offset, "timeout": 25}, timeout=35)
+    for update in body.get("result") or []:
+        _offset = int(update["update_id"]) + 1
+        handle_update(update)
+
+
+def _poll_loop():
+    while True:
+        if not token():
+            time.sleep(15)
+            continue
+        try:
+            _poll_once()
+        except Exception as exc:
+            print(f"Telegram sorğusu dayandı: {exc}")
+            time.sleep(5)
+
+
+def _listen():
+    webhook = (os.getenv("TELEGRAM_WEBHOOK_URL") or "").strip()
+    if webhook:
+        _api("setWebhook", {
+            "url": webhook,
+            "secret_token": (os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip(),
+            "allowed_updates": ["message", "callback_query"],
+            "drop_pending_updates": False,
+        })
+        print("Telegram webhook qoşuldu.")
+        return
+    _api("deleteWebhook", {"drop_pending_updates": False})
+    threading.Thread(target=_poll_loop, name="telegram-poller", daemon=True).start()
+
+
+def start_poller():
+    global _poller_started
+    if _poller_started or not token():
+        return
+    _poller_started = True
+    try:
+        _listen()
+    except Exception as exc:
+        print(f"Telegram dinləyicisi açılmadı: {exc}")
