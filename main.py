@@ -3,10 +3,11 @@ import re
 import json
 import time
 import smtplib
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from email.message import EmailMessage
-from urllib.parse import urljoin, urlparse
+import urllib.request
+from urllib.parse import quote_plus, urljoin, urlparse
 
 from dotenv import load_dotenv
 from pypdf import PdfReader
@@ -26,6 +27,7 @@ client = OpenAI(
 MODEL = os.getenv("LLM_MODEL_NAME", "gemini-3.5-flash-lite")
 MIN_SCORE = int(os.getenv("MIN_MATCH_SCORE", "75"))
 MAX_JOBS = int(os.getenv("MAX_JOBS_PER_SOURCE", "15"))
+MAX_VACANCY_AGE_DAYS = int(os.getenv("MAX_VACANCY_AGE_DAYS", "30"))
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
 
 EXCEL_PATH = Path("applications.xlsx")
@@ -307,89 +309,760 @@ def extract_page_clean(page, url: str, is_listing: bool = False) -> tuple[str, l
     return text, ranked_links, found_emails
 
 
+def fold_text(value: str) -> str:
+    return (
+        (value or "")
+        .lower()
+        .replace("i̇", "i")
+        .replace("ı", "i")
+        .replace("ə", "e")
+        .replace("ö", "o")
+        .replace("ü", "u")
+        .replace("ğ", "g")
+        .replace("ş", "s")
+        .replace("ç", "c")
+    )
+
+
+MONTHS = {
+    "yanvar": 1, "yan": 1, "january": 1, "jan": 1,
+    "fevral": 2, "fev": 2, "february": 2, "feb": 2,
+    "mart": 3, "mar": 3, "march": 3,
+    "aprel": 4, "apr": 4, "april": 4,
+    "may": 5,
+    "iyun": 6, "iyn": 6, "june": 6, "jun": 6,
+    "iyul": 7, "iyl": 7, "july": 7, "jul": 7,
+    "avqust": 8, "avq": 8, "august": 8, "aug": 8,
+    "sentyabr": 9, "sen": 9, "september": 9, "sep": 9,
+    "oktyabr": 10, "okt": 10, "october": 10, "oct": 10,
+    "noyabr": 11, "noy": 11, "november": 11, "nov": 11,
+    "dekabr": 12, "dek": 12, "december": 12, "dec": 12,
+}
+AZ_MONTH_NAMES = [
+    "yanvar", "fevral", "mart", "aprel", "may", "iyun",
+    "iyul", "avqust", "sentyabr", "oktyabr", "noyabr", "dekabr",
+]
+PUBLISH_MARKERS = (
+    "paylasilib", "derc olunub", "tarixinde derc", "elanin qoyulma",
+    "elave olunub", "yerlesdirilib",
+)
+DEADLINE_MARKERS = (
+    "son tarix", "bitme tarixi", "son muraciet", "deadline",
+)
+GENERIC_LINK_TITLES = {
+    "muraciet et", "apply", "vakansiyaya bax", "daha etrafli", "etrafli",
+}
+
+
+def month_number(token: str) -> int | None:
+    return MONTHS.get(fold_text(token).strip("."))
+
+
+def _safe_date(year: int, month: int, day: int) -> date | None:
+    if year < 100:
+        year += 2000
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def posted_date(text: str, today: date | None = None) -> date | None:
+    """Elanın açılış tarixini tapır. Son müraciət tarixini götürmür."""
+    today = today or date.today()
+    folded = fold_text(re.sub(r"\s+", " ", text or ""))
+    occupied: list[tuple[int, int]] = []
+    found: list[tuple[date, int]] = []
+
+    def overlaps(start: int, end: int) -> bool:
+        return any(not (end <= left or start >= right) for left, right in occupied)
+
+    def add(found_date: date | None, start: int, end: int):
+        if not found_date or overlaps(start, end):
+            return
+        if not (today.year - 1) <= found_date.year <= today.year + 1:
+            return
+        occupied.append((start, end))
+        found.append((found_date, start))
+
+    for match in re.finditer(r"\bbu gun\b", folded):
+        add(today, match.start(), match.end())
+    for match in re.finditer(r"\bdunen\b", folded):
+        add(today - timedelta(days=1), match.start(), match.end())
+    for match in re.finditer(r"\b(\d{1,2})\s+gun evvel\b", folded):
+        days = int(match.group(1))
+        if 1 <= days <= 60:
+            add(today - timedelta(days=days), match.start(), match.end())
+    for match in re.finditer(r"\b(\d{1,2})\s+gun\b(?!\s+qal)", folded):
+        days = int(match.group(1))
+        if 1 <= days <= 45:
+            add(today - timedelta(days=days), match.start(), match.end())
+
+    for match in re.finditer(r"\b(\d{4})-(\d{2})-(\d{2})\b", folded):
+        add(_safe_date(int(match.group(1)), int(match.group(2)), int(match.group(3))), match.start(), match.end())
+    for match in re.finditer(r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b", folded):
+        add(_safe_date(int(match.group(3)), int(match.group(2)), int(match.group(1))), match.start(), match.end())
+    for match in re.finditer(r"\b(\d{1,2})\s+([a-z]{3,12})\s+(\d{4})\b", folded):
+        month = month_number(match.group(2))
+        add(_safe_date(int(match.group(3)), month, int(match.group(1))) if month else None, match.start(), match.end())
+    for match in re.finditer(r"\b([a-z]{3,12})\s+(\d{1,2}),?\s+(\d{4})\b", folded):
+        month = month_number(match.group(1))
+        add(_safe_date(int(match.group(3)), month, int(match.group(2))) if month else None, match.start(), match.end())
+    month_alt = (
+        "yanvar|fevral|mart|aprel|may|iyun|iyul|avqust|sentyabr|oktyabr|noyabr|dekabr|"
+        "noy|okt|dek|sen|avq|fev|yan|apr|iyn|iyl|mar|jan|feb|jun|jul|aug|sep|oct|nov"
+    )
+    for match in re.finditer(rf"\b(\d{{1,2}})\s+({month_alt})\b", folded):
+        month = month_number(match.group(2))
+        year = today.year
+        parsed = _safe_date(year, month, int(match.group(1))) if month else None
+        if parsed and parsed > today + timedelta(days=2):
+            parsed = _safe_date(year - 1, month, int(match.group(1)))
+        add(parsed, match.start(), match.end())
+
+    publish_at = [match.start() for marker in PUBLISH_MARKERS for match in re.finditer(re.escape(marker), folded)]
+    deadline_at = [match.start() for marker in DEADLINE_MARKERS for match in re.finditer(re.escape(marker), folded)]
+
+    candidates = []
+    for found_date, index in found:
+        if found_date > today + timedelta(days=1):
+            continue
+        if any(0 <= index - marker <= 40 for marker in deadline_at):
+            continue
+        candidates.append((found_date, index))
+    if not candidates:
+        return None
+
+    nearest = None
+    for found_date, index in candidates:
+        for marker in publish_at:
+            distance = index - marker
+            if -35 <= distance <= 80 and (nearest is None or abs(distance) < nearest[0]):
+                nearest = (abs(distance), found_date)
+    if nearest:
+        return nearest[1]
+    # Səhifənin əvvəlindəki tarix elanın öz tarixidir. Sonda gələn oxşar elanlar daha köhnə ola bilər.
+    return min(candidates, key=lambda item: item[1])[0]
+
+
+def format_az_date(value: date) -> str:
+    return f"{value.day} {AZ_MONTH_NAMES[value.month - 1]} {value.year}"
+
+
+def is_recent_vacancy(value: date, today: date | None = None) -> bool:
+    today = today or date.today()
+    return value >= today - timedelta(days=MAX_VACANCY_AGE_DAYS)
+
+
+def cv_search_keywords(profile: dict) -> list[str]:
+    blob = " ".join([
+        profile.get("headline") or "",
+        " ".join((item.get("role") or "") for item in profile.get("experience") or []),
+        " ".join(profile.get("core_skills") or []),
+    ])
+    folded = fold_text(blob)
+    rules = [
+        ("data analyst", ["Data Analitik", "Data Analyst"]),
+        ("data analit", ["Data Analitik"]),
+        ("report", ["Hesabat"]),
+        ("hesabat", ["Hesabat"]),
+        ("power bi", ["Power BI"]),
+        ("sql", ["SQL"]),
+        ("financial", ["Maliyyə"]),
+        ("maliyye", ["Maliyyə"]),
+        ("python", ["Python"]),
+        ("tableau", ["Tableau"]),
+        ("business anal", ["Business Analyst"]),
+        ("biznes anal", ["Biznes analitik"]),
+        ("analit", ["Analitik"]),
+    ]
+    ordered = []
+    for needle, words in rules:
+        if needle in folded:
+            ordered.extend(words)
+    if not ordered:
+        headline = (profile.get("headline") or "").split("|")[0].strip()
+        if headline:
+            ordered.append(headline)
+    unique = []
+    seen = set()
+    for word in ordered:
+        key = fold_text(word)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(word)
+    return unique[:6]
+
+
+def canonical_portal(url: str) -> str:
+    host = urlparse(url).netloc.lower().replace("www.", "")
+    if "hellojob.az" in host:
+        return "https://www.hellojob.az/vakansiyalar"
+    if "glorri.az" in host:
+        return "https://jobs.glorri.az/"
+    if "smartjob.az" in host:
+        return "https://smartjob.az/vakansiyalar"
+    if "busy.az" in host:
+        return "https://busy.az/vacancies"
+    if "ejob.az" in host:
+        return "https://ejob.az/is-elanlari/"
+    if "jobsearch.az" in host:
+        return "https://jobsearch.az/vacancies"
+    if "work.az" in host:
+        return "https://www.work.az/vakansiyalar"
+    if "boss.az" in host:
+        return "https://boss.az/search/vacancies"
+    if "hrin.az" in host:
+        return "https://hrin.az/vakansiyalar"
+    if "azerweb.az" in host:
+        return "https://azerweb.az/vakansiyalar"
+    if "azvak.az" in host:
+        return "https://azvak.az/"
+    if "humanpro.az" in host:
+        return "https://humanpro.az/az/vakansiyalar"
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+
+def unique_portals(urls: list[str]) -> list[str]:
+    seen = set()
+    portals = []
+    for url in urls:
+        portal = canonical_portal(url)
+        if portal in seen:
+            continue
+        seen.add(portal)
+        portals.append(portal)
+    return portals
+
+
+def is_job_link(href: str, page_url: str) -> bool:
+    if not href.startswith("http"):
+        return False
+    parsed = urlparse(href)
+    host = parsed.netloc.lower().replace("www.", "")
+    base_host = urlparse(page_url).netloc.lower().replace("www.", "")
+    if base_host not in host and host not in base_host:
+        return False
+    parts = [part for part in parsed.path.split("/") if part]
+    if not parts or parts[-1].lower() in ("undefined", "create"):
+        return False
+    low = parsed.path.lower()
+    if any(bad in low for bad in ("/login", "/register", "/add-vacancy", "/signup")):
+        return False
+    if "hellojob.az" in host:
+        return parts[0] == "vakansiya"
+    if "ejob.az" in host:
+        return len(parts) >= 2 and parts[0] == "is-elani" and parts[1][:1].isdigit()
+    if "humanpro.az" in host:
+        return "vakansiya" in parts
+    if "glorri.az" in host:
+        return len(parts) >= 3 and parts[0] == "vacancies"
+    if "smartjob.az" in host:
+        return len(parts) >= 2 and parts[0] == "vakansiyalar"
+    if "busy.az" in host:
+        return parts[0] == "vacancy"
+    if "jobsearch.az" in host:
+        return len(parts) >= 2 and parts[0] == "vacancies"
+    return len(parts) >= 2 and parts[0] in ("vacancies", "vakansiyalar", "vakansiya", "vacancy", "is-elani")
+
+
+def clean_listing_title(text: str) -> str:
+    title = re.split(
+        r"\b\d{1,2}\s+(?:yanvar|fevral|mart|aprel|may|iyun|iyul|avqust|sentyabr|oktyabr|noyabr|dekabr)\b|\b\d{1,2}[./]\d{1,2}[./]\d{4}\b|\bbax[ıi]ş\b|\bbu gün\b|\bdünən\b|\b\d{1,2}\s+gün\b",
+        text or "",
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+    title = re.sub(r"\s+(?:razılaşma(?:\s+ilə)?|razılasma(?:\s+ile)?)\s+\d+\s*$", "", title, flags=re.I)
+    return re.sub(r"\s+", " ", title).strip(" -–,|")[:140]
+
+
+def anchor_title(anchor, href: str) -> str:
+    for tag in anchor.find_all(["h1", "h2", "h3", "h4"]):
+        heading = re.sub(r"\s+", " ", tag.get_text(" ", strip=True))
+        if 3 <= len(heading) <= 140 and fold_text(heading) not in GENERIC_LINK_TITLES:
+            return heading
+    text = clean_listing_title(anchor.get_text(" ", strip=True))
+    if text and fold_text(text) not in GENERIC_LINK_TITLES and len(text) >= 3:
+        return text
+    node = anchor
+    for _ in range(6):
+        node = getattr(node, "parent", None)
+        if not node:
+            break
+        for tag in node.find_all(["h1", "h2", "h3", "h4"], recursive=False):
+            heading = re.sub(r"\s+", " ", tag.get_text(" ", strip=True))
+            if 3 <= len(heading) <= 140 and fold_text(heading) not in GENERIC_LINK_TITLES:
+                return heading
+    slug = urlparse(href).path.rstrip("/").split("/")[-1]
+    slug = re.sub(r"-\d{5,}.*$", "", slug)
+    slug = re.sub(r"^\d+-", "", slug)
+    return (slug.replace("-", " ").strip() or "Vakansiya")[:140]
+
+
+def card_text(anchor) -> str:
+    """Kartın tarixini də götürür. Başlıq tək olanda bir səviyyə yuxarı çıxır."""
+    node = anchor
+    best = ""
+    for _ in range(6):
+        node = getattr(node, "parent", None)
+        if not node:
+            break
+        text = re.sub(r"\s+", " ", node.get_text(" ", strip=True))
+        if len(text) < 20:
+            continue
+        if len(text) > 900:
+            break
+        best = text
+        if posted_date(text):
+            return text[:700]
+    return (best or re.sub(r"\s+", " ", anchor.get_text(" ", strip=True)))[:700]
+
+
+def collect_job_links(soup: BeautifulSoup, page_url: str) -> list[dict]:
+    found = []
+    seen = set()
+    for anchor in soup.find_all("a", href=True):
+        href = urljoin(page_url, anchor["href"].strip()).split("#")[0].rstrip("/")
+        if not is_job_link(href, page_url) or href in seen:
+            continue
+        seen.add(href)
+        found.append({
+            "title": anchor_title(anchor, href),
+            "company": "Unknown",
+            "job_url": href,
+            "card": card_text(anchor)[:700],
+        })
+    return found
+
+
+def _open_page(page, url: str):
+    for attempt in range(2):
+        try:
+            page.goto(url, wait_until="commit", timeout=45000)
+            page.wait_for_timeout(2200)
+            return
+        except Exception:
+            if attempt == 1:
+                raise
+            page.wait_for_timeout(1200)
+
+
+def _scroll_listing(page, rounds: int = 3):
+    for _ in range(rounds):
+        page.evaluate("window.scrollBy(0, window.innerHeight)")
+        page.wait_for_timeout(350)
+
+
+def _submit_search(page, keyword: str):
+    selectors = [
+        "input[name='keyword']",
+        "input[name='keywords']",
+        "input[name='q']",
+        "input[placeholder*='açar söz']",
+        "input[placeholder*='Açar söz']",
+        "input[placeholder*='axtarış']",
+        "input[placeholder*='Axtarış']",
+    ]
+    for selector in selectors:
+        field = page.locator(selector)
+        if field.count() == 0:
+            continue
+        try:
+            field.first.click(timeout=2500)
+            field.first.fill(keyword)
+            button = page.locator("button, input[type='submit']").filter(
+                has_text=re.compile(r"Axtar|Search", re.I)
+            )
+            if button.count() > 0:
+                button.first.click(timeout=2500)
+            else:
+                field.first.press("Enter")
+            page.wait_for_timeout(1800)
+            return
+        except Exception:
+            continue
+
+
+def _search_page(page, portal: str, keyword: str):
+    host = urlparse(portal).netloc.lower()
+    query = quote_plus(keyword)
+    if "hellojob.az" in host:
+        _open_page(page, f"https://www.hellojob.az/vakansiyalar?q={query}")
+    elif "glorri.az" in host:
+        _open_page(page, f"https://jobs.glorri.az/?keyword={query}")
+        _submit_search(page, keyword)
+    elif "ejob.az" in host:
+        _open_page(page, "https://ejob.az/is-elanlari/")
+        _submit_search(page, keyword)
+    elif "work.az" in host:
+        _open_page(page, f"https://www.work.az/vakansiyalar?search={query}")
+    elif "boss.az" in host:
+        _open_page(page, f"https://boss.az/search/vacancies?searchTerm={query}&sortBy=DATE")
+    elif "hrin.az" in host:
+        _open_page(page, f"https://hrin.az/vakansiyalar?q={query}")
+    elif "humanpro.az" in host:
+        _open_page(page, f"https://humanpro.az/az/vakansiyalar?keyword={query}")
+    elif "azvak.az" in host:
+        _open_page(page, "https://azvak.az/")
+        field = page.locator("input[placeholder*='Vəzifə'], input[placeholder*='vezife']")
+        if field.count():
+            try:
+                field.first.click(timeout=2500)
+                field.first.fill(keyword)
+                field.first.press("Enter")
+                page.wait_for_timeout(1500)
+            except Exception:
+                pass
+    else:
+        _open_page(page, portal)
+        before = page.url
+        _submit_search(page, keyword)
+        if "undefined" in page.url:
+            _open_page(page, before)
+    _scroll_listing(page)
+
+
+def _level_blocked(title: str) -> bool:
+    folded = fold_text(title)
+    return any(word in folded for word in ("intern", "tecrube", "staj", "trainee", "junior"))
+
+
+def select_job_links(profile: dict, portal: str, links: list[dict]) -> list[dict]:
+    if len(links) <= MAX_JOBS:
+        return links
+    roles = ", ".join(item.get("role", "") for item in profile.get("experience", []) if item.get("role"))
+    skills = ", ".join(profile.get("core_skills", [])[:15])
+    lines = [f"{item['title']} -> {item['job_url']}" for item in links[:350]]
+    system = "Sən veb məlumat çıxaran parsersən. Yalnız təmiz JSON massivi qaytar."
+    user = f"""Bu axtarış nəticəsindən ({portal}) namizədin profilinə uyğun konkret vakansiya linklərini seç (ən çox {MAX_JOBS * 2} ədəd).
+Ana səhifə, kateqoriya və ümumi siyahı linklərini GÖTÜRMƏ.
+Namizəd: {profile.get("headline", "")} | Rollar: {roles} | Bacarıqlar: {skills}.
+Intern, Təcrübəçi, Stajyer, Trainee, Junior və aidiyyətsiz sahələri ÇIXAR.
+
+JSON:
+[{{"title": "Vəzifə adı", "company": "Şirkət adı", "job_url": "Tam URL"}}]
+
+LİNKLƏR:
+{chr(10).join(lines)}
+"""
+    try:
+        picked = clean_json(ask_llm(system, user))
+    except Exception:
+        return links[:MAX_JOBS]
+    by_url = {item["job_url"]: item for item in links}
+    chosen = []
+    for row in picked:
+        url = str(row.get("job_url", "")).split("#")[0].rstrip("/")
+        base = by_url.get(url)
+        if not base:
+            continue
+        chosen.append({
+            **base,
+            "title": row.get("title") or base["title"],
+            "company": row.get("company") or "Unknown",
+        })
+    return chosen[: MAX_JOBS * 2] or links[:MAX_JOBS]
+
+
+LOOSE_SEARCH_HOSTS = ("humanpro.az", "work.az", "azvak.az", "ejob.az")
+
+
+def vacancy_lead(text: str) -> str:
+    """Oxşar elanlar blokundan əvvəlki hissə. Oradakı köhnə tarixlər bu elana aid deyil."""
+    return re.split(
+        r"oxşar vakansiya|oxsar vakansiya|bənzər vakansiya|benzer vakansiya|similar vacanc",
+        text or "",
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+
+
+def _keyword_hit(text: str, keyword: str) -> bool:
+    folded = fold_text(text)
+    tokens = [part for part in re.split(r"[^a-z0-9]+", fold_text(keyword)) if len(part) >= 3]
+    if not tokens:
+        return True
+    return any(token in folded for token in tokens)
+
+
+def _http_json(url: str):
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.load(response)
+
+
+def _plain_html(value: str) -> str:
+    return re.sub(r"\s+", " ", BeautifulSoup(value or "", "html.parser").get_text(" ", strip=True))
+
+
+def _specific_job_url(url: str) -> str:
+    if not str(url).startswith("http"):
+        return ""
+    path = urlparse(url).path.rstrip("/").lower()
+    if path in ("", "/home", "/index", "/index.html", "/az", "/en"):
+        return ""
+    return url
+
+
+def _ejob_id(url: str) -> int:
+    match = re.search(r"/is-elani/(\d+)", url)
+    return int(match.group(1)) if match else 0
+
+
+def _busy_links(keywords: list[str], today: date) -> list[dict]:
+    found = []
+    seen = set()
+    for keyword in keywords:
+        try:
+            data = _http_json(
+                "https://busy.az/api/bff/api/vacancies"
+                f"?page=1&per_page=24&keyword={quote_plus(keyword)}"
+            )
+        except Exception:
+            continue
+        for row in data.get("vacancies") or []:
+            job_id = row.get("id")
+            slug = row.get("slug") or "vakansiya"
+            if not job_id or job_id in seen:
+                continue
+            opened = posted_date((row.get("created_at") or row.get("published") or "")[:10], today)
+            if not opened or not is_recent_vacancy(opened, today):
+                continue
+            seen.add(job_id)
+            company = ((row.get("company") or {}).get("title") or "Unknown").strip()
+            found.append({
+                "title": row.get("job_title") or "Vakansiya",
+                "company": company,
+                "job_url": f"https://busy.az/vacancy/{job_id}/{slug}",
+                "card": (row.get("created_at") or "")[:10],
+                "known_date": opened,
+            })
+    found.sort(key=lambda item: item["known_date"], reverse=True)
+    return found[:MAX_JOBS]
+
+
+def _azerweb_categories(keyword: str) -> list[str]:
+    folded = fold_text(keyword)
+    categories = []
+    if any(word in folded for word in ("maliyye", "hesabat", "muhasib")):
+        categories.append("muhasibat-ve-maliyye")
+    if any(word in folded for word in ("data", "sql", "power", "python", "analit")):
+        categories.append("it-ve-texnologiya")
+    if folded in ("analitik", "analit") or "market" in folded:
+        categories.append("marketinq")
+    return list(dict.fromkeys(categories)) or ["it-ve-texnologiya"]
+
+
+def _azerweb_links(keywords: list[str], today: date) -> list[dict]:
+    found = []
+    seen = set()
+    for keyword in keywords:
+        for slug in _azerweb_categories(keyword):
+            for page_no in (1, 2):
+                try:
+                    data = _http_json(f"https://azerweb.az/api/professions/{slug}/?page={page_no}")
+                except Exception:
+                    continue
+                for row in data.get("items") or []:
+                    title = row.get("title") or ""
+                    job_id = row.get("id")
+                    if not job_id or job_id in seen or not _keyword_hit(title, keyword):
+                        continue
+                    opened = posted_date(row.get("posted_date") or "", today)
+                    if not opened or not is_recent_vacancy(opened, today):
+                        continue
+                    seen.add(job_id)
+                    found.append({
+                        "title": title,
+                        "company": row.get("company") or "Unknown",
+                        "job_url": "",
+                        "card": row.get("posted_date") or "",
+                        "known_date": opened,
+                        "kind": row.get("kind") or "partner",
+                        "remote_id": job_id,
+                        "category": slug,
+                    })
+    found.sort(key=lambda item: item["known_date"], reverse=True)
+    detailed = []
+    for item in found[:MAX_JOBS]:
+        try:
+            payload = _http_json(
+                f"https://azerweb.az/api/announcements/{item['kind']}/{item['remote_id']}/"
+            )
+        except Exception:
+            continue
+        link = _specific_job_url(payload.get("apply_url") or "") or _specific_job_url(payload.get("original_url") or "")
+        if not link:
+            link = f"https://azerweb.az/vakansiyalar/{item['category']}#{item['remote_id']}"
+        email = (payload.get("apply_email") or "").strip()
+        detailed.append({
+            **item,
+            "title": payload.get("title") or item["title"],
+            "company": payload.get("company") or item["company"],
+            "job_url": link.split("?")[0].rstrip("/"),
+            "detail_text": _plain_html(payload.get("description") or ""),
+            "found_emails": [email] if email and is_valid_hr_email(email) else [],
+        })
+    return detailed
+
+
+def collect_source_jobs(page, profile: dict, source_urls: list[str], skip_urls: set | None = None, log=print, should_cancel=None, on_progress=None) -> list[dict]:
+    """Hər mənbədə CV sözləri ilə axtarış edir və son 30 gündən köhnə elanları atır."""
+    skip_urls = {url.rstrip("/") for url in (skip_urls or set())}
+    should_cancel = should_cancel or (lambda: False)
+    keywords = cv_search_keywords(profile)
+    portals = unique_portals(source_urls)
+    today = date.today()
+    cutoff = today - timedelta(days=MAX_VACANCY_AGE_DAYS)
+    log(f"CV axtarış sözləri: {', '.join(keywords)}")
+    log(f"Tarix şərti: {format_az_date(cutoff)} və sonra açılan elanlar")
+
+    collected = []
+    seen = set(skip_urls)
+    for index, portal in enumerate(portals):
+        if should_cancel():
+            break
+        if on_progress:
+            on_progress(10 + int((index / max(len(portals), 1)) * 55))
+        host = urlparse(portal).netloc.replace("www.", "")
+        log(f"Mənbə ({index + 1}/{len(portals)}): {host}")
+        found = []
+        found_urls = set()
+        if "busy.az" in host:
+            log("  Axtarış: vakansiya API")
+            try:
+                found = _busy_links(keywords, today)
+            except Exception as exc:
+                log(f"  ! Axtarış açılmadı: {exc}")
+            log(f"    -> {len(found)} son {MAX_VACANCY_AGE_DAYS} günün elanı")
+        elif "azerweb.az" in host:
+            log("  Axtarış: kateqoriya API")
+            try:
+                found = _azerweb_links(keywords, today)
+            except Exception as exc:
+                log(f"  ! Axtarış açılmadı: {exc}")
+            log(f"    -> {len(found)} son {MAX_VACANCY_AGE_DAYS} günün elanı")
+        else:
+            loose = any(name in host for name in LOOSE_SEARCH_HOSTS)
+            for keyword in keywords:
+                if should_cancel():
+                    break
+                log(f"  Axtarış: {keyword}")
+                try:
+                    _search_page(page, portal, keyword)
+                    soup = BeautifulSoup(page.content(), "html.parser")
+                    for tag in soup(["script", "style", "svg", "noscript"]):
+                        tag.decompose()
+                    links = collect_job_links(soup, page.url or portal)
+                except Exception as exc:
+                    log(f"  ! Axtarış açılmadı ({keyword}): {exc}")
+                    continue
+                fresh = []
+                for item in links:
+                    if item["job_url"] in found_urls:
+                        continue
+                    if loose and not _keyword_hit(f"{item.get('title', '')} {item.get('card', '')}", keyword):
+                        continue
+                    found_urls.add(item["job_url"])
+                    fresh.append(item)
+                found.extend(fresh)
+                log(f"    -> {len(fresh)} yeni link")
+
+        if not found:
+            log("  -> uyğun link tapılmadı")
+            continue
+
+        skipped_old = 0
+        recent = []
+        for item in found:
+            card_date = item.get("known_date") or posted_date(item.get("card") or "", today)
+            item["known_date"] = card_date
+            if card_date and not is_recent_vacancy(card_date, today):
+                skipped_old += 1
+                seen.add(item["job_url"].rstrip("/"))
+                continue
+            recent.append(item)
+        if skipped_old:
+            log(f"    -> {skipped_old} köhnə kart açılmadan atıldı")
+
+        if "ejob.az" in host:
+            recent.sort(key=lambda item: _ejob_id(item["job_url"]), reverse=True)
+            chosen = recent[:8]
+        elif len(recent) <= MAX_JOBS:
+            chosen = recent
+        else:
+            chosen = select_job_links(profile, portal, recent)
+
+        kept_here = 0
+        old_streak = 0
+        for item in chosen:
+            if should_cancel() or kept_here >= MAX_JOBS:
+                break
+            title = item.get("title") or "Vakansiya"
+            job_url = (item.get("job_url") or "").rstrip("/")
+            if not job_url or job_url in seen or _level_blocked(title):
+                if job_url:
+                    seen.add(job_url)
+                continue
+            seen.add(job_url)
+            if item.get("detail_text"):
+                detail_text = item["detail_text"]
+                emails = item.get("found_emails") or []
+            else:
+                log(f"    Oxunur: {title[:50]}")
+                try:
+                    detail_text, _, emails = extract_page_clean(page, job_url, is_listing=False)
+                except Exception as exc:
+                    log(f"    ! Səhifə xətası: {exc}")
+                    continue
+            if item.get("detail_text") or "busy.az" in host:
+                opened = item.get("known_date") or posted_date(vacancy_lead(detail_text), today)
+            else:
+                opened = posted_date(vacancy_lead(detail_text), today) or item.get("known_date")
+            if not opened:
+                log(f"    Keçildi (tarix yoxdur): {title[:50]}")
+                continue
+            if not is_recent_vacancy(opened, today):
+                log(f"    Keçildi ({format_az_date(opened)}): {title[:50]}")
+                old_streak += 1
+                if "ejob.az" in host and old_streak >= 2:
+                    log("    -> köhnə arxiv başladı, qalan eJob elanları açılmır")
+                    break
+                continue
+            old_streak = 0
+            kept_here += 1
+            collected.append({
+                "source": portal,
+                "job_url": job_url,
+                "title": title,
+                "company": item.get("company") or "Unknown",
+                "found_emails": emails,
+                "raw_text": detail_text[:4500],
+                "posted_at": format_az_date(opened),
+            })
+        log(f"  -> {kept_here} son {MAX_VACANCY_AGE_DAYS} günün elanı saxlanıldı")
+    return collected
+
+
 def scrape_sources(browser, profile: dict, sources_file: str = "sources.txt", skip_urls: set = None) -> list[dict]:
-    skip_urls = skip_urls or set()
     urls = [
         line.strip()
         for line in Path(sources_file).read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
-    collected = []
-    seen_job_urls = set(skip_urls)
     page = browser.new_page(
         user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     )
-
-    roles_str = ", ".join([e.get("role", "") for e in profile.get("experience", []) if e.get("role")])
-    skills_str = ", ".join(profile.get("core_skills", [])[:15])
-
-    for src_url in urls:
-        print(f"[2/4] Mənbə skan edilir: {src_url}")
-        try:
-            _, links, _ = extract_page_clean(page, src_url, is_listing=True)
-        except Exception as e:
-            print(f"  ! Mənbə açılmadı ({src_url}): {e}")
-            continue
-
-        if not links:
-            print("  -> 0 vakansiya linki tapıldı:")
-            continue
-
-        sys_p = "Sən veb məlumat çıxaran parsersən. Yalnız təmiz JSON massivi qaytar."
-        usr_p = f"""Bu səhifədən ({src_url}) namizədin profilinə az da olsa uyğun gələn BÜTÜN iş elanlarının linklərini seç (ən çox {MAX_JOBS} ədəd).
-Ana səhifə, kateqoriya və ya ümumi siyahı linklərini GÖTÜRMƏ.
-Namizədin profili: {profile.get("headline", "")} | Rollar: {roles_str} | Bacarıqlar: {skills_str}.
-Yalnız tamamilə aidiyyətsiz sahələri (sürücü, krupye, satıcı, fəhlə, xadimə, aşpaz, kassir və s.) çıxar. Uyğun elan yoxdursa [] qaytar.
-
-JSON formatı:
-[
-  {{
-    "title": "Vəzifə adı",
-    "company": "Şirkət adı (varsa)",
-    "job_url": "Tam vakansiya URL-i"
-  }}
-]
-
-LİNKLƏR:
-{chr(10).join(links[:350])}
-"""
-        try:
-            listings = clean_json(ask_llm(sys_p, usr_p))[:MAX_JOBS]
-            print(f"  -> {len(listings)} vakansiya linki tapıldı:")
-        except Exception as e:
-            print(f"  ! Siyahı parse xətası: {e}")
-            continue
-
-        for idx, item in enumerate(listings, 1):
-            j_title_low = item.get("title", "").lower()
-            if any(w in j_title_low for w in ["intern", "təcrübə", "staj", "trainee", "junior"]):
-                continue
-            j_url = item.get("job_url", "").strip()
-            clean_j = j_url.split("#")[0].rstrip("/")
-            if (
-                not clean_j
-                or clean_j in seen_job_urls
-                or clean_j == src_url.rstrip("/")
-                or clean_j.endswith(("glorri.az", "/vacancies", "/vakansiyalar", "/is-elanlari"))
-            ):
-                continue
-            seen_job_urls.add(clean_j)
-            print(f"     [{idx}/{len(listings)}] Oxunur: {item.get('title', '')[:45]}")
-            try:
-                detail_text, _, emails = extract_page_clean(page, clean_j, is_listing=False)
-                collected.append({
-                    "source": src_url,
-                    "job_url": clean_j,
-                    "title": item.get("title", "Unknown"),
-                    "company": item.get("company", "Unknown"),
-                    "found_emails": emails,
-                    "raw_text": detail_text[:4500],
-                })
-            except Exception as e:
-                print(f"     ! Səhifə açılmadı ({clean_j}): {e}")
-
-    page.close()
-    return collected
+    try:
+        return collect_source_jobs(page, profile, urls, skip_urls)
+    finally:
+        page.close()
 
 
 # ---------------------------------------------------------

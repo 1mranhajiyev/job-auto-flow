@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Job Auto-Flow — təqdimat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f3f1ec;
+      --surface: #fffcf8;
+      --ink: #1c1b18;
+      --muted: #6f6b63;
+      --faint: #98948b;
+      --line: #e5e1d8;
+      --good: #1a6b45;
+      --good-bg: #e7f3ec;
+      --mid: #1d4e86;
+      --mid-bg: #e8f0f8;
+      --warn: #8a5810;
+      --warn-bg: #f8f0e2;
+      --sans: "Instrument Sans", "Avenir Next", "Segoe UI", sans-serif;
+      --serif: "Instrument Serif", Palatino, serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+    body { font-family: var(--sans); overflow: hidden; }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    .deck { height: 100%; }
+    .slide {
+      display: none;
+      height: 100%;
+      padding: 48px 64px 88px;
+    }
+    .slide.on { display: flex; flex-direction: column; }
+    .kicker {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--faint);
+      margin: 0 0 18px;
+    }
+    h1 {
+      font-family: var(--serif);
+      font-weight: 400;
+      font-size: clamp(42px, 5.4vw, 72px);
+      line-height: 0.98;
+      letter-spacing: -0.03em;
+      margin: 0;
+      max-width: 16ch;
+    }
+    h2 {
+      font-family: var(--serif);
+      font-weight: 400;
+      font-size: clamp(34px, 4vw, 52px);
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+      margin: 0 0 28px;
+      max-width: 22ch;
+    }
+    .lead {
+      margin: 22px 0 0;
+      max-width: 38rem;
+      font-size: 20px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .grow { flex: 1; }
+    .row, .grid, .flow, .sources { margin-top: auto; }
+    .row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; }
+    .grid.three { grid-template-columns: repeat(3, 1fr); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 18px 16px;
+    }
+    .card .n {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--faint);
+      margin-bottom: 10px;
+    }
+    .card h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+    .card p { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.4; }
+    .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .chip {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 14px;
+    }
+    .chip strong { font-weight: 600; }
+    .arrow { color: var(--faint); font-family: var(--serif); font-size: 22px; }
+    .sources { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .src {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 14px;
+    }
+    .src span { display: block; margin-top: 3px; color: var(--faint); font-family: var(--mono); font-size: 11px; }
+    .facts { display: flex; gap: 28px; margin-top: 36px; }
+    .facts b {
+      display: block;
+      font-family: var(--serif);
+      font-size: 40px;
+      font-weight: 400;
+      letter-spacing: -0.03em;
+    }
+    .facts span { color: var(--muted); font-size: 13px; }
+    .bar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 28px 18px;
+      background: linear-gradient(to top, var(--bg) 70%, transparent);
+    }
+    .dots { display: flex; gap: 6px; }
+    .dot { width: 7px; height: 7px; border-radius: 99px; background: #d5d0c6; padding: 0; }
+    .dot.on { background: var(--ink); width: 18px; }
+    .nav { display: flex; align-items: center; gap: 8px; }
+    .nav button, .count {
+      height: 34px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .nav button { width: 34px; }
+    .count {
+      display: inline-flex;
+      align-items: center;
+      padding: 0 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .hint {
+      position: fixed;
+      top: 22px;
+      right: 28px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--faint);
+    }
+    @media (max-width: 800px) {
+      html, body { height: auto; min-height: 100%; overflow: auto; }
+      .deck { height: auto; }
+      .slide, .slide.on { height: auto; min-height: 100%; }
+      .slide { padding: 28px 20px 28px; }
+      .row, .grid, .sources { margin-top: 22px; }
+      h1 { font-size: 40px; }
+      h2 { font-size: 32px; margin-bottom: 16px; }
+      .lead { font-size: 16px; }
+      .row, .grid, .grid.three, .sources { grid-template-columns: 1fr 1fr; }
+      .facts b { font-size: 30px; }
+      .hint { display: none; }
+      .bar { position: sticky; }
+    }
+    @media (max-width: 560px) {
+      .row, .grid, .grid.three, .sources, .facts { grid-template-columns: 1fr; display: grid; }
+      .facts { gap: 12px; }
+    }
+    @media print {
+      body { overflow: visible; background: white; }
+      .bar, .hint { display: none; }
+      .slide, .slide.on {
+        display: flex;
+        height: auto;
+        min-height: 100vh;
+        break-after: page;
+      }
+    }
+  </style>
+</head>
+<body>
+  <p class="hint">Oxlarla keçin</p>
+  <div class="deck" id="deck">
+
+    <section class="slide on">
+      <p class="kicker">Job Auto-Flow</p>
+      <h1>Vakansiyadan müraciətə bir axın</h1>
+      <p class="lead">Azərbaycan iş portallarında CV-yə uyğun elanları tapır, son ayın vakansiyalarını saxlayır və seçilmiş elan üçün CV ilə məktub hazırlayır.</p>
+      <div class="facts">
+        <div><b>12</b><span>iş portalı</span></div>
+        <div><b>30</b><span>günlük tarix həddi</span></div>
+        <div><b>04</b><span>ekrandakı addım</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">01 — Məsələ</p>
+      <h2>Axtarış hər saytda ayrı işdir</h2>
+      <div class="row">
+        <article class="card"><div class="n">01</div><h3>Səpələnmiş siyahılar</h3><p>Eyni vəzifə on iki saytda, hər birinin öz axtarış qutusu və öz link forması var.</p></article>
+        <article class="card"><div class="n">02</div><h3>Köhnə arxiv</h3><p>Axtarış nəticəsinin üstündə aylar əvvəlki elanlar dayanır. Hər birini açmaq vaxt aparır.</p></article>
+        <article class="card"><div class="n">03</div><h3>Ümumi CV</h3><p>Bir fayl hər elana eyni gedir. Elanın dili və tələbi mətnə düşmür.</p></article>
+        <article class="card"><div class="n">04</div><h3>İtən müraciət</h3><p>E-poçtu olan elanla əl ilə yazılan elan eyni siyahıda qarışır.</p></article>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">02 — Axın</p>
+      <h2>Dörd addım, bir ekran</h2>
+      <div class="row">
+        <article class="card"><div class="n">01</div><h3>Profil</h3><p>CV oxunur, namizəd kartı və axtarış sözləri yaranır.</p></article>
+        <article class="card"><div class="n">02</div><h3>Vakansiyalar</h3><p>Portallar gəzilir, təzə elanlar balla sıralanır.</p></article>
+        <article class="card"><div class="n">03</div><h3>CV və məktub</h3><p>Seçilmiş elan üçün bir səhifəlik CV və məktub yazılır.</p></article>
+        <article class="card"><div class="n">04</div><h3>Göndəriş</h3><p>E-poçtu olanlara məktub gedir, qalanlar Excel-ə düşür.</p></article>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">03 — Yol</p>
+      <h2>Fayldan hesabata</h2>
+      <div class="grow"></div>
+      <div class="flow">
+        <span class="chip"><strong>cv.pdf</strong></span>
+        <span class="arrow">→</span>
+        <span class="chip">profil</span>
+        <span class="arrow">→</span>
+        <span class="chip">12 portal</span>
+        <span class="arrow">→</span>
+        <span class="chip">son 30 gün</span>
+        <span class="arrow">→</span>
+        <span class="chip">uyğunluq balı</span>
+        <span class="arrow">→</span>
+        <span class="chip">CV + məktub</span>
+        <span class="arrow">→</span>
+        <span class="chip"><strong>e-poçt və ya Excel</strong></span>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">04 — Profil</p>
+      <h2>CV bir dəfə oxunur</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="n">profile.json</div>
+          <h3>Keş sonrakı skanlarda qalır</h3>
+          <p>PDF-dən ad, başlıq, bacarıqlar və iş təcrübəsi çıxır. «Yadda saxla» formadakı sahələri yeniləyir. «CV yüklə» və «Yenidən oxu» keşi silib PDF-i təzədən oxuyur.</p>
+        </article>
+        <article class="card">
+          <div class="n">Axtarış sözləri</div>
+          <h3>Sözlər CV-dən gəlir</h3>
+          <p>Başlıq, rollar və bacarıqlar sabit xəritədən keçir. Bu profil üçün sözlər: Data Analitik, Data Analyst, Hesabat, Power BI, SQL, Maliyyə. Ən çoxu altı söz.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">05 — Axtarış</p>
+      <h2>Hər sayt öz qaydası ilə</h2>
+      <div class="grid three">
+        <article class="card"><div class="n">Ünvan</div><h3>Saytın öz parametri</h3><p>HelloJob <span style="font-family:var(--mono);font-size:13px">?q=</span>, Hrin eyni, Boss tarixə görə sıra, Busy və Azerweb birbaşa öz siyahı servisi.</p></article>
+        <article class="card"><div class="n">Tarix</div><h3>Kart açılmazdan əvvəl</h3><p>Elanın tarixi 30 gündən köhnədirsə səhifə açılmır. Detalda elanın öz tarixi götürülür, altdakı oxşar elanlar yox.</p></article>
+        <article class="card"><div class="n">Səviyyə</div><h3>Staj və junior kənarda</h3><p>Intern, təcrübəçi, stajyer, trainee və junior başlıqlar siyahıya düşmür.</p></article>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">06 — Mənbələr</p>
+      <h2>On iki unikal portal</h2>
+      <div class="sources">
+        <div class="src">Glorri<span>jobs.glorri.az</span></div>
+        <div class="src">HelloJob<span>vakansiyalar</span></div>
+        <div class="src">Smartjob<span>vakansiyalar</span></div>
+        <div class="src">Busy<span>vakansiya API</span></div>
+        <div class="src">eJob<span>elan forması</span></div>
+        <div class="src">Jobsearch<span>vakansiyalar</span></div>
+        <div class="src">Work.az<span>axtarış</span></div>
+        <div class="src">Boss.az<span>tarixə görə</span></div>
+        <div class="src">Hrin<span>açar söz</span></div>
+        <div class="src">Azerweb<span>kateqoriya</span></div>
+        <div class="src">Azvak<span>vəzifə xanası</span></div>
+        <div class="src">HumanPro<span>başlıq uyğunluğu</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">07 — Uyğunluq</p>
+      <h2>Hər elanın öz balı var</h2>
+      <div class="grid three">
+        <article class="card" style="background:var(--mid-bg)"><div class="n">0–100</div><h3>Profilə görə bal</h3><p>Başlıq, şirkət və elan mətni namizədin təcrübəsi ilə tutuşdurulur. Siyahı yüksək baldan aşağıya düzülür.</p></article>
+        <article class="card" style="background:var(--good-bg)"><div class="n">Hədd</div><h3>Standart 80</h3><p>Bu baldan yuxarı elanlar seçilmiş sayılır. Hədd ekrandan dəyişir. Hər mənbədən ən çoxu 15 elan açılır.</p></article>
+        <article class="card" style="background:var(--warn-bg)"><div class="n">Səviyyə</div><h3>Aşağı tavan</h3><p>Junior, staj və sırf mühasib vəzifəsinə açar söz uyğun gəlsə belə bal 35-i keçmir.</p></article>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">08 — CV</p>
+      <h2>Elanın dilində, bir səhifə</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="n">Mətn</div>
+          <h3>Real təcrübə, elanın sözləri</h3>
+          <p>Xülasə, bacarıqlar və iş bəndləri həmin vakansiyanın tələbinə çəkilir. Rəqəmlər CV-dəki faktlardan gəlir. CV bir A4 səhifəsinə sığır.</p>
+        </article>
+        <article class="card">
+          <div class="n">Məktub</div>
+          <h3>Eyni dildə müşayiət məktubu</h3>
+          <p>Elan Azərbaycan dilindədirsə CV və məktub da Azərbaycan dilindədir. İngilis elanda hər iki mətn ingilis dilində yazılır.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">09 — Göndəriş</p>
+      <h2>Məktub gedən yerdə, siyahı qalan yerdə</h2>
+      <div class="grid three">
+        <article class="card"><div class="n">E-poçt</div><h3>HR ünvanı varsa</h3><p>Məktub və PDF həmin ünvana gedir. Ünvan elanın mətnindən və ya səhifədən tapılır.</p></article>
+        <article class="card"><div class="n">Excel</div><h3>Ünvan yoxdursa</h3><p>Elan əl ilə müraciət kimi yazılır: şirkət, vəzifə, bal, link və CV faylı.</p></article>
+        <article class="card"><div class="n">Test rejimi</div><h3>Məktub getmir</h3><p>Standart rejim yalnız yoxlayır. Eyni elan linki ikinci skanda təkrar siyahıya düşmür.</p></article>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">10 — Quruluş</p>
+      <h2>Ekran, axın, brauzer</h2>
+      <div class="sources">
+        <div class="src">app.py<span>FastAPI, dörd addım</span></div>
+        <div class="src">main.py<span>axtarış, bal, PDF, poçt</span></div>
+        <div class="src">templates<span>bir səhifəlik ekran</span></div>
+        <div class="src">sources.txt<span>portal siyahısı</span></div>
+        <div class="src">cv.pdf<span>namizəd mənbəyi</span></div>
+        <div class="src">profile.json<span>oxunmuş profil</span></div>
+        <div class="src">Chromium<span>portal səhifələri</span></div>
+        <div class="src">applications.xlsx<span>müraciət jurnalı</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <p class="kicker">11 — İstifadə</p>
+      <h2>Kompüterdə və eyni şəbəkədəki telefonda</h2>
+      <p class="lead">Server bütün şəbəkə interfeyslərində 8000 portunda açılır. Telefon brauzerindən kompüterin ünvanı ilə eyni dörd addım görünür.</p>
+      <div class="facts">
+        <div><b>01</b><span>profili yadda saxla</span></div>
+        <div><b>02</b><span>skanı başlat</span></div>
+        <div><b>03</b><span>CV hazırla</span></div>
+        <div><b>04</b><span>yoxla, sonra göndər</span></div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="bar">
+    <div class="dots" id="dots"></div>
+    <div class="nav">
+      <button type="button" id="prev" aria-label="Əvvəlki">←</button>
+      <div class="count"><span id="num">01</span>&nbsp;/&nbsp;<span id="total">11</span></div>
+      <button type="button" id="next" aria-label="Növbəti">→</button>
+    </div>
+  </div>
+
+  <script>
+    const slides = [...document.querySelectorAll(".slide")];
+    const dots = document.getElementById("dots");
+    let index = 0;
+    slides.forEach((_, i) => {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "dot";
+      dot.setAttribute("aria-label", "Slayd " + (i + 1));
+      dot.addEventListener("click", () => show(i));
+      dots.appendChild(dot);
+    });
+    function show(n) {
+      index = Math.max(0, Math.min(slides.length - 1, n));
+      slides.forEach((slide, i) => slide.classList.toggle("on", i === index));
+      [...dots.children].forEach((dot, i) => dot.classList.toggle("on", i === index));
+      document.getElementById("num").textContent = String(index + 1).padStart(2, "0");
+      document.getElementById("total").textContent = String(slides.length).padStart(2, "0");
+    }
+    function next() { show(index + 1); }
+    function prev() { show(index - 1); }
+    document.getElementById("next").addEventListener("click", next);
+    document.getElementById("prev").addEventListener("click", prev);
+    document.addEventListener("keydown", (event) => {
+      if (["ArrowRight", "PageDown", " "].includes(event.key)) { event.preventDefault(); next(); }
+      if (["ArrowLeft", "PageUp", "Backspace"].includes(event.key)) { event.preventDefault(); prev(); }
+      if (event.key === "Home") show(0);
+      if (event.key === "End") show(slides.length - 1);
+    });
+    show(0);
+  </script>
+</body>
+</html>

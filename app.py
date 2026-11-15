@@ -218,74 +218,15 @@ def _run_scan_worker(rescan_existing: bool):
                 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
             )
 
-            roles_str = ", ".join([e.get("role", "") for e in profile.get("experience", []) if e.get("role")])
-            skills_str = ", ".join(profile.get("core_skills", [])[:15])
-
-            for s_idx, src_url in enumerate(urls):
-                if TASK_STATE["cancel"]:
-                    break
-                pct = 10 + int((s_idx / max(len(urls), 1)) * 55)
-                TASK_STATE["progress"] = pct
-                log_msg(f"Mənbə skan edilir ({s_idx + 1}/{len(urls)}): {src_url}")
-
-                try:
-                    _, links, _ = main.extract_page_clean(page, src_url, is_listing=True)
-                except Exception as e:
-                    log_msg(f"  ! Mənbə açılmadı: {e}")
-                    continue
-
-                if not links:
-                    log_msg("  -> 0 vakansiya linki tapıldı")
-                    continue
-
-                sys_p = "Sən veb məlumat çıxaran parsersən. Yalnız təmiz JSON massivi qaytar."
-                usr_p = f"""Bu səhifədən ({src_url}) namizədin profilinə uyğun gələn konkret iş elanlarının linklərini seç (ən çox {main.MAX_JOBS} ədəd).
-Ana səhifə, kateqoriya və ya ümumi siyahı linklərini GÖTÜRMƏ.
-Namizədin profili: {profile.get("headline", "")} | Rollar: {roles_str} | Bacarıqlar: {skills_str}.
-Intern, Təcrübəçi, Stajyer, Trainee, Junior və aidiyyətsiz sahələri (sürücü, krupye, satıcı, fəhlə, xadimə, aşpaz, kassir və s.) TAMAMİLƏ ÇIXAR.
-
-JSON formatı:
-[{{"title": "Vəzifə adı", "company": "Şirkət adı", "job_url": "Tam URL"}}]
-
-LİNKLƏR:
-{chr(10).join(links[:350])}
-"""
-                try:
-                    listings = main.clean_json(main.ask_llm(sys_p, usr_p))[: main.MAX_JOBS]
-                    log_msg(f"  -> {len(listings)} namizəd link seçildi")
-                except Exception as e:
-                    log_msg(f"  ! Parse xətası: {e}")
-                    continue
-
-                for item in listings:
-                    if TASK_STATE["cancel"]:
-                        break
-                    t_low = item.get("title", "").lower()
-                    if any(w in t_low for w in ["intern", "təcrübə", "staj", "trainee", "junior"]):
-                        continue
-                    clean_j = item.get("job_url", "").strip().split("#")[0].rstrip("/")
-                    if (
-                        not clean_j
-                        or clean_j in seen_urls
-                        or clean_j == src_url.rstrip("/")
-                        or clean_j.endswith(("glorri.az", "/vacancies", "/vakansiyalar", "/is-elanlari"))
-                    ):
-                        continue
-                    seen_urls.add(clean_j)
-                    log_msg(f"     Oxunur: {item.get('title', '')[:50]}")
-                    try:
-                        detail_text, _, emails = main.extract_page_clean(page, clean_j, is_listing=False)
-                        raw_jobs.append({
-                            "source": src_url,
-                            "job_url": clean_j,
-                            "title": item.get("title", "Unknown"),
-                            "company": item.get("company", "Unknown"),
-                            "found_emails": emails,
-                            "raw_text": detail_text[:4500],
-                        })
-                    except Exception as e:
-                        log_msg(f"     ! Səhifə xətası: {e}")
-
+            raw_jobs = main.collect_source_jobs(
+                page,
+                profile,
+                urls,
+                seen_urls,
+                log=log_msg,
+                should_cancel=lambda: TASK_STATE["cancel"],
+                on_progress=lambda pct: TASK_STATE.__setitem__("progress", pct),
+            )
             page.close()
 
             TASK_STATE["progress"] = 72
@@ -325,6 +266,7 @@ LİNKLƏR:
                     "pdf_url": "",
                     "email_subject": "",
                     "cover_letter": "",
+                    "posted_at": j.get("posted_at", ""),
                     "status": "Uyğundur (Seçilib)" if score >= main.MIN_SCORE else f"Aşağı bal (<{main.MIN_SCORE}%)",
                 })
 
@@ -545,4 +487,4 @@ def download_excel():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)

@@ -3,308 +3,808 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Job Auto-Flow Studio</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Job Auto-Flow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3f1ec;
+      --surface: #fffcf8;
+      --ink: #1c1b18;
+      --muted: #6f6b63;
+      --faint: #98948b;
+      --line: #e5e1d8;
+      --line-strong: #d5d0c6;
+      --good: #1a6b45;
+      --good-bg: #e7f3ec;
+      --warn: #8a5810;
+      --warn-bg: #f8f0e2;
+      --mid: #1d4e86;
+      --mid-bg: #e8f0f8;
+      --sans: "Instrument Sans", "Avenir Next", "Segoe UI", sans-serif;
+      --serif: "Instrument Serif", "Iowan Old Style", Palatino, serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    input[type="checkbox"] { accent-color: var(--ink); }
+    a { text-underline-offset: 3px; }
+    ::selection { background: #e6dfd2; }
+    * { scrollbar-width: thin; scrollbar-color: #d4cfc5 transparent; }
+
+    .hidden { display: none !important; }
+
+    .shell {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 28px 0 80px;
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand {
+      font-family: var(--serif);
+      font-size: 26px;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .top-actions { display: flex; align-items: center; gap: 10px; }
+
+    .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      height: 28px;
+      padding: 0 10px 0 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      background: transparent;
+    }
+    .mode-badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .mode-badge.is-live { color: var(--good); background: var(--good-bg); }
+    .mode-badge.is-test { color: var(--warn); background: var(--warn-bg); }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      margin-top: 28px;
+      border-bottom: 1px solid var(--line);
+    }
+    .step-tab {
+      appearance: none;
+      background: none;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      padding: 0 8px 12px 0;
+      text-align: left;
+      color: var(--faint);
+    }
+    .step-tab:hover { color: var(--ink); }
+    .step-tab.is-active { color: var(--ink); border-bottom-color: var(--ink); }
+    .step-kicker {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      font-variant-numeric: tabular-nums;
+    }
+    .step-name { display: block; margin-top: 3px; font-size: 14px; font-weight: 500; }
+    .step-tab.is-active .step-name { font-weight: 600; }
+
+    .task {
+      margin-top: 18px;
+      padding: 16px 16px 14px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }
+    .task-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .task-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ink);
+      box-shadow: 0 0 0 0 rgba(28, 27, 24, 0.35);
+      animation: pulse 1.6s ease-out infinite;
+    }
+    @keyframes pulse {
+      70% { box-shadow: 0 0 0 7px rgba(28, 27, 24, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(28, 27, 24, 0); }
+    }
+    .task-meta { display: flex; align-items: center; gap: 10px; }
+    .pct { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); }
+    .track {
+      margin-top: 12px;
+      height: 2px;
+      background: var(--line);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .track > div { height: 100%; width: 0; background: var(--ink); transition: width 0.3s ease; }
+    .logs {
+      margin: 12px 0 0;
+      padding: 12px;
+      max-height: 148px;
+      overflow: auto;
+      background: #f7f5f1;
+      border-radius: 10px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.55;
+      color: #3f3c36;
+      white-space: pre-wrap;
+    }
+
+    main { margin-top: 28px; }
+    .step-panel { display: flex; flex-direction: column; gap: 18px; }
+    .page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .lead { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1.45fr 0.9fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .card-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+    .card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .span-2 { grid-column: span 2; }
+    .stack { display: flex; flex-direction: column; gap: 12px; }
+
+    .lbl { display: block; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+    .field {
+      width: 100%;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .field:focus { border-color: var(--ink); }
+    .field.sm { padding: 7px 10px; font-size: 13px; border-radius: 8px; }
+    .field.mono {
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre;
+      overflow: auto;
+    }
+    textarea.field { resize: vertical; min-height: 72px; }
+    .field.is-set { border-color: #b7d7c6; color: var(--good); }
+
+    .check {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .check input { margin-top: 2px; accent-color: var(--ink); }
+    .hint { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      height: 38px;
+      padding: 0 14px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      font-size: 13.5px;
+      font-weight: 500;
+      letter-spacing: -0.011em;
+      text-decoration: none;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+    .btn:hover { background: rgba(28, 27, 24, 0.04); }
+    .btn.primary { background: var(--ink); color: #f6f4ef; }
+    .btn.primary:hover { background: #2c2a26; }
+    .btn.ghost { border-color: var(--line-strong); background: transparent; }
+    .btn.ghost:hover { background: #fff; }
+    .btn.sm { height: 32px; padding: 0 11px; font-size: 12.5px; border-radius: 8px; }
+    .btn:disabled { opacity: 0.45; cursor: progress; }
+    .btn:focus-visible, .step-tab:focus-visible, .flt-btn:focus-visible {
+      outline: 2px solid var(--ink);
+      outline-offset: 2px;
+    }
+    .file-btn { cursor: pointer; }
+
+    .actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .bar-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .seg {
+      display: inline-flex;
+      padding: 3px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 11px;
+    }
+    .flt-btn {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      height: 30px;
+      padding: 0 11px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+    .flt-btn span { margin-left: 4px; font-variant-numeric: tabular-nums; opacity: 0.7; }
+    .flt-btn.is-active { background: var(--ink); color: #f6f4ef; }
+
+    .table-wrap { overflow-x: auto; padding: 0; }
+    table { width: 100%; min-width: 760px; border-collapse: collapse; }
+    th {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--faint);
+      border-bottom: 1px solid var(--line);
+    }
+    td {
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: #faf8f4; }
+    .empty { text-align: center; color: var(--muted); padding: 48px 16px !important; }
+    .company { font-weight: 600; letter-spacing: -0.01em; }
+    .job-link {
+      display: inline-block;
+      margin-top: 2px;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 13.5px;
+    }
+    .job-link:hover { text-decoration: underline; }
+    .job-meta { margin-top: 2px; color: var(--faint); font-size: 12px; }
+    .mail { width: 230px; }
+    .status { width: 148px; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+    .score {
+      display: inline-flex;
+      min-width: 46px;
+      justify-content: center;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      background: #f1efe9;
+      color: var(--muted);
+    }
+    .score.high { background: var(--good-bg); color: var(--good); }
+    .score.mid { background: var(--mid-bg); color: var(--mid); }
+
+    .cv-card { display: flex; flex-direction: column; gap: 14px; }
+    .cv-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .score-line { font-size: 12px; font-weight: 600; color: var(--mid); font-variant-numeric: tabular-nums; }
+    .score-line.high { color: var(--good); }
+    .cv-title { margin: 2px 0 0; font-size: 16px; font-weight: 600; letter-spacing: -0.015em; }
+    .channel { margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+    .channel .good { color: var(--good); font-weight: 500; }
+    .channel .warn { color: var(--warn); font-weight: 500; }
+    .note { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .stat { padding: 18px 20px 16px; }
+    .stat + .stat { border-left: 1px solid var(--line); }
+    .stat-label { font-size: 12px; color: var(--muted); }
+    .stat-num {
+      margin-top: 8px;
+      font-family: var(--serif);
+      font-size: 36px;
+      line-height: 1;
+      font-weight: 400;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-num.good { color: var(--good); }
+    .stat-num.warn { color: var(--warn); }
+
+    .review { padding-top: 6px; padding-bottom: 6px; }
+    .review-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .review-row:last-child { border-bottom: 0; }
+    .review-main { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+    .review-main input { margin-top: 3px; accent-color: var(--ink); }
+    .review-title { font-weight: 600; letter-spacing: -0.01em; }
+    .review-sub { margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+    .review-sub a { color: var(--ink); }
+    .review-side { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #f1efe9;
+      color: var(--muted);
+    }
+    .pill.good { background: var(--good-bg); color: var(--good); }
+    .pill.warn { background: var(--warn-bg); color: var(--warn); }
+    .quiet { padding: 28px 8px; text-align: center; color: var(--muted); font-size: 13.5px; }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(28, 27, 24, 0.46);
+    }
+    .modal-card {
+      width: min(920px, 100%);
+      height: min(860px, 88vh);
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .modal-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .modal-bar strong { font-size: 14px; font-weight: 600; }
+    .modal-card iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      z-index: 50;
+      max-width: min(460px, calc(100% - 32px));
+      padding: 11px 14px;
+      border-radius: 12px;
+      background: var(--ink);
+      color: #f6f4ef;
+      font-size: 13px;
+      line-height: 1.4;
+      transform: translateX(-50%) translateY(8px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+    .toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 860px) {
+      .shell { width: min(1120px, calc(100% - 28px)); padding-top: 20px; }
+      .brand { font-size: 22px; }
+      .top { align-items: flex-start; }
+      .steps {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        border-bottom: 0;
+      }
+      .step-tab {
+        margin: 0;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: transparent;
+      }
+      .step-tab.is-active { border-color: var(--ink); background: var(--surface); }
+      .split, .grid-2, .stats { grid-template-columns: 1fr; }
+      .span-2 { grid-column: auto; }
+      .stat + .stat { border-left: 0; border-top: 1px solid var(--line); }
+      .page-head, .cv-top, .review-row, .card-head { flex-direction: column; align-items: flex-start; }
+      .actions { justify-content: stretch; }
+      .actions .btn { flex: 1; }
+      .table-wrap table { min-width: 0; }
+      .table-wrap thead { display: none; }
+      .table-wrap tr { display: block; padding: 6px 0 12px; border-bottom: 1px solid var(--line); }
+      .table-wrap tr:last-child { border-bottom: 0; }
+      .table-wrap td {
+        display: block;
+        width: auto !important;
+        border: 0;
+        padding: 4px 16px;
+      }
+      .table-wrap .status { white-space: normal; }
+      .table-wrap .empty { padding: 28px 16px !important; }
+    }
+  </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+<body>
+  <div class="shell">
+    <header class="top">
+      <a class="brand" href="/">Job Auto-Flow</a>
+      <div class="top-actions">
+        <span id="modeBadge" class="mode-badge">Yüklənir</span>
+        <a class="btn ghost sm" href="/api/export/excel">Excel</a>
+      </div>
+    </header>
 
-  <!-- TOP NAVBAR -->
-  <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-30 backdrop-blur">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow">JA</div>
-        <div>
-          <h1 class="text-lg font-bold tracking-tight text-white">Job Auto-Flow Studio</h1>
-          <p class="text-xs text-slate-400">Addım-addım İnteraktiv İş Axtarışı, Fərdi CV və E-poçt Müraciət Paneli</p>
+    <nav class="steps" aria-label="Addımlar">
+      <button type="button" onclick="goStep(1)" id="tab-1" class="step-tab is-active">
+        <span class="step-kicker">01</span>
+        <span class="step-name">Profil</span>
+      </button>
+      <button type="button" onclick="goStep(2)" id="tab-2" class="step-tab">
+        <span class="step-kicker">02</span>
+        <span class="step-name">Vakansiyalar</span>
+      </button>
+      <button type="button" onclick="goStep(3)" id="tab-3" class="step-tab">
+        <span class="step-kicker">03</span>
+        <span class="step-name">CV</span>
+      </button>
+      <button type="button" onclick="goStep(4)" id="tab-4" class="step-tab">
+        <span class="step-kicker">04</span>
+        <span class="step-name">Göndəriş</span>
+      </button>
+    </nav>
+
+    <div id="taskBox" class="task hidden">
+      <div class="task-head">
+        <div class="task-title">
+          <span id="taskSpinner" class="dot"></span>
+          <span id="taskTitle">Proses icra olunur</span>
+        </div>
+        <div class="task-meta">
+          <span id="taskPct" class="pct">0%</span>
+          <button type="button" id="cancelBtn" onclick="cancelTask()" class="btn ghost sm">Dayandır</button>
         </div>
       </div>
-
-      <div class="flex items-center gap-3">
-        <span id="modeBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-          Real Göndəriş Aktiv
-        </span>
-        <a href="/api/export/excel" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700 transition">
-          Excel Yüklə (.xlsx)
-        </a>
-      </div>
-    </div>
-  </header>
-
-  <!-- STEPPER NAVIGATION -->
-  <div class="max-w-7xl mx-auto px-4 pt-6">
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-      <button onclick="goStep(1)" id="tab-1" class="step-tab text-left p-3.5 rounded-xl border transition">
-        <div class="text-xs uppercase tracking-wider opacity-75">Addım 1</div>
-        <div class="font-semibold text-sm mt-0.5">Profil və Mənbələr</div>
-      </button>
-      <button onclick="goStep(2)" id="tab-2" class="step-tab text-left p-3.5 rounded-xl border transition">
-        <div class="text-xs uppercase tracking-wider opacity-75">Addım 2</div>
-        <div class="font-semibold text-sm mt-0.5">Vakansiya Skanı və Seçim</div>
-      </button>
-      <button onclick="goStep(3)" id="tab-3" class="step-tab text-left p-3.5 rounded-xl border transition">
-        <div class="text-xs uppercase tracking-wider opacity-75">Addım 3</div>
-        <div class="font-semibold text-sm mt-0.5">CV və Məktub Hazırlığı</div>
-      </button>
-      <button onclick="goStep(4)" id="tab-4" class="step-tab text-left p-3.5 rounded-xl border transition">
-        <div class="text-xs uppercase tracking-wider opacity-75">Addım 4</div>
-        <div class="font-semibold text-sm mt-0.5">Yoxlama və Göndəriş</div>
-      </button>
+      <div class="track"><div id="taskBar"></div></div>
+      <pre id="taskLogs" class="logs"></pre>
     </div>
 
-    <!-- LIVE PROGRESS / LOG BAR -->
-    <div id="taskBox" class="hidden mb-6 rounded-xl border border-blue-500/40 bg-slate-900 p-4 shadow-lg">
-      <div class="flex items-center justify-between mb-2">
-        <div class="flex items-center gap-2.5">
-          <span id="taskSpinner" class="w-3 h-3 rounded-full bg-blue-500 animate-ping"></span>
-          <span id="taskTitle" class="font-semibold text-sm text-blue-300">Proses icra olunur...</span>
+    <main>
+      <section id="step-1" class="step-panel">
+        <div class="page-head">
+          <div>
+            <h2>Profil və mənbələr</h2>
+            <p class="lead">Namizəd məlumatı, uyğunluq həddi və vakansiya saytları.</p>
+          </div>
         </div>
-        <div class="flex items-center gap-3">
-          <span id="taskPct" class="text-xs font-mono text-slate-300">0%</span>
-          <button id="cancelBtn" onclick="cancelTask()" class="px-2.5 py-1 rounded bg-rose-600/80 hover:bg-rose-600 text-xs font-medium">
-            Dayandır
-          </button>
-        </div>
-      </div>
-      <div class="w-full bg-slate-800 rounded-full h-2 mb-3 overflow-hidden">
-        <div id="taskBar" class="bg-blue-500 h-2 transition-all duration-300" style="width: 0%"></div>
-      </div>
-      <pre id="taskLogs" class="text-xs font-mono text-slate-300 bg-slate-950/90 p-3 rounded-lg max-h-40 overflow-y-auto border border-slate-800"></pre>
-    </div>
-  </div>
 
-  <!-- MAIN CONTENT -->
-  <main class="max-w-7xl mx-auto px-4 pb-16">
+        <div class="split">
+          <div class="card">
+            <div class="card-head">
+              <h3>Namizəd</h3>
+              <div class="card-actions">
+                <label class="btn ghost sm file-btn">
+                  CV yüklə
+                  <input type="file" accept=".pdf" hidden onchange="uploadNewCV(event)" />
+                </label>
+                <button type="button" onclick="reparseCV()" class="btn ghost sm">Yenidən oxu</button>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <label class="lbl" for="p_full_name">Ad və soyad</label>
+                <input id="p_full_name" class="field" />
+              </div>
+              <div>
+                <label class="lbl" for="p_headline">Vəzifə başlığı</label>
+                <input id="p_headline" class="field" />
+              </div>
+              <div>
+                <label class="lbl" for="p_email">E-poçt</label>
+                <input id="p_email" class="field" type="email" />
+              </div>
+              <div>
+                <label class="lbl" for="p_phone">Telefon</label>
+                <input id="p_phone" class="field" />
+              </div>
+              <div>
+                <label class="lbl" for="p_linkedin">LinkedIn</label>
+                <input id="p_linkedin" class="field" />
+              </div>
+              <div>
+                <label class="lbl" for="p_github">GitHub</label>
+                <input id="p_github" class="field" />
+              </div>
+              <div class="span-2">
+                <label class="lbl" for="p_skills">Bacarıqlar</label>
+                <textarea id="p_skills" rows="2" class="field"></textarea>
+              </div>
+            </div>
+          </div>
 
-    <!-- ==================== STEP 1 ==================== -->
-    <section id="step-1" class="step-panel space-y-6">
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Candidate Profile -->
-        <div class="lg:col-span-2 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-            <h2 class="font-bold text-base text-white">Namizəd Profili (profile.json)</h2>
-            <div class="flex items-center gap-2">
-              <label class="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700">
-                Yeni CV Yüklə (.pdf)
-                <input type="file" accept=".pdf" class="hidden" onchange="uploadNewCV(event)" />
+          <div class="card">
+            <div class="card-head">
+              <h3>Axtarış</h3>
+            </div>
+            <div class="stack">
+              <div class="grid-2">
+                <div>
+                  <label class="lbl" for="s_min_score">Minimum uyğunluq</label>
+                  <input id="s_min_score" type="number" min="50" max="100" class="field" />
+                </div>
+                <div>
+                  <label class="lbl" for="s_max_jobs">Mənbə limiti</label>
+                  <input id="s_max_jobs" type="number" min="1" max="30" class="field" />
+                </div>
+              </div>
+              <label class="check">
+                <input id="s_dry_run" type="checkbox" />
+                <span>
+                  Test rejimi
+                  <span class="hint">E-poçt göndərilmir, yalnız yoxlanılır.</span>
+                </span>
               </label>
-              <button onclick="reparseCV()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700">
-                cv.pdf Yenidən Oxu
-              </button>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Ad və Soyad</label>
-              <input id="p_full_name" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Əsas Vəzifə Başlığı (Headline)</label>
-              <input id="p_headline" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">E-poçt</label>
-              <input id="p_email" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Telefon</label>
-              <input id="p_phone" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">LinkedIn URL</label>
-              <input id="p_linkedin" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">GitHub URL</label>
-              <input id="p_github" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
-            </div>
-            <div class="md:col-span-2">
-              <label class="block text-xs text-slate-400 mb-1">Əsas Bacarıqlar (vergüllə ayrılmış)</label>
-              <textarea id="p_skills" rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2"></textarea>
+              <div>
+                <label class="lbl" for="s_sources">Mənbələr</label>
+                <textarea id="s_sources" rows="8" class="field mono" spellcheck="false"></textarea>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Settings & Sources -->
-        <div class="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-          <h2 class="font-bold text-base text-white border-b border-slate-800 pb-3">Axtarış və Göndəriş Ayarları</h2>
+        <div class="actions">
+          <button type="button" onclick="saveStep1(false)" class="btn ghost">Yadda saxla</button>
+          <button type="button" onclick="saveStep1(true)" class="btn primary">Yadda saxla və davam et</button>
+        </div>
+      </section>
 
-          <div class="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Minimum Uyğunluq %</label>
-              <input id="s_min_score" type="number" min="50" max="100" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Mənbə Başına Limit</label>
-              <input id="s_max_jobs" type="number" min="1" max="30" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
-            </div>
-          </div>
-
-          <label class="flex items-center gap-2.5 text-sm bg-slate-950 p-3 rounded-lg border border-slate-800 cursor-pointer">
-            <input id="s_dry_run" type="checkbox" class="w-4 h-4 accent-blue-600" />
-            <span>Test Rejimi (DRY_RUN — real e-poçt göndərmə)</span>
-          </label>
-
+      <section id="step-2" class="step-panel hidden">
+        <div class="page-head">
           <div>
-            <label class="block text-xs text-slate-400 mb-1">Mənbə Portallar (sources.txt)</label>
-            <textarea id="s_sources" rows="8" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono"></textarea>
+            <h2>Vakansiyalar</h2>
+            <p class="lead">Hər mənbədə CV-yə uyğun axtarış edilir. Yalnız son 30 gündə açılan elanlar saxlanılır.</p>
           </div>
         </div>
-      </div>
 
-      <div class="flex justify-end gap-3">
-        <button onclick="saveStep1(false)" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-semibold border border-slate-700">
-          Yadda Saxla
-        </button>
-        <button onclick="saveStep1(true)" class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white shadow">
-          Yadda Saxla və Addım 2-yə Keç →
-        </button>
-      </div>
-    </section>
-
-    <!-- ==================== STEP 2 ==================== -->
-    <section id="step-2" class="step-panel hidden space-y-5">
-      <div class="rounded-xl border border-slate-800 bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-4">
-        <div class="flex flex-wrap items-center gap-3">
-          <button onclick="startScan()" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white shadow">
-            🔍 Vakansiyaları Skan Et və Qiymətləndir
-          </button>
-          <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-            <input id="rescanCheck" type="checkbox" class="accent-blue-500" />
-            <span>Artıq Excel-də olan linkləri də yenidən yoxla</span>
-          </label>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2 text-xs">
-          <button onclick="bulkSelect('matched')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">Uyğunları Seç</button>
-          <button onclick="bulkSelect('email_only')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">Yalnız E-poçtu Olanlar</button>
-          <button onclick="bulkSelect('none')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">Seçimi Sıfırla</button>
-        </div>
-      </div>
-
-      <!-- Filter Tabs -->
-      <div class="flex items-center justify-between">
-        <div class="flex gap-2 text-xs">
-          <button onclick="setFilter('all')" id="flt-all" class="flt-btn px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium">Hamısı (<span id="cnt-all">0</span>)</button>
-          <button onclick="setFilter('selected')" id="flt-selected" class="flt-btn px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">Seçilənlər (<span id="cnt-sel">0</span>)</button>
-          <button onclick="setFilter('email')" id="flt-email" class="flt-btn px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">HR E-poçtu Olanlar (<span id="cnt-email">0</span>)</button>
-        </div>
-        <button onclick="goStep(3)" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">
-          Seçilənlər Üçün CV Hazırlığına Keç (Addım 3) →
-        </button>
-      </div>
-
-      <!-- Jobs Table -->
-      <div class="rounded-xl border border-slate-800 bg-slate-900 overflow-x-auto">
-        <table class="w-full text-left border-collapse text-sm">
-          <thead>
-            <tr class="border-b border-slate-800 bg-slate-950/60 text-xs text-slate-400 uppercase">
-              <th class="p-3 w-10">Seç</th>
-              <th class="p-3 w-20">Bal</th>
-              <th class="p-3">Şirkət və Vəzifə</th>
-              <th class="p-3 w-72">HR / Şirkət E-poçtu (Redaktə edilə bilər)</th>
-              <th class="p-3 w-44">Status</th>
-            </tr>
-          </thead>
-          <tbody id="jobsTableBody" class="divide-y divide-slate-800/80">
-            <tr><td colspan="5" class="p-8 text-center text-slate-500">Hələ vakansiya skan edilməyib. Yuxarıdakı düymə ilə axtarışı başladın.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- ==================== STEP 3 ==================== -->
-    <section id="step-3" class="step-panel hidden space-y-5">
-      <div class="rounded-xl border border-slate-800 bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 class="font-bold text-base text-white">Fərdi CV və Motivasiya Məktubu Generasiyası</h2>
-          <p class="text-xs text-slate-400">Addım 2-də seçdiyiniz vakansiyalar üçün təsvirə uyğun 1 səhifəlik PDF CV və məktub hazırlanır.</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <button onclick="generateCVs(null)" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white shadow">
-            📄 Seçilmiş Vakansiyalar Üçün CV Yarat
-          </button>
-          <button onclick="goStep(4)" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white">
-            Göndəriş Mərhələsinə Keç (Addım 4) →
-          </button>
-        </div>
-      </div>
-
-      <div id="cvCardsContainer" class="space-y-4"></div>
-    </section>
-
-    <!-- ==================== STEP 4 ==================== -->
-    <section id="step-4" class="step-panel hidden space-y-6">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="rounded-xl border border-slate-800 bg-slate-900 p-4">
-          <div class="text-xs text-slate-400">Seçilmiş Ümumi Vakansiya</div>
-          <div id="kpi-total" class="text-2xl font-bold text-white mt-1">0</div>
-        </div>
-        <div class="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4">
-          <div class="text-xs text-emerald-300">Avtomatik E-poçt Göndəriləcək</div>
-          <div id="kpi-email" class="text-2xl font-bold text-emerald-400 mt-1">0</div>
-        </div>
-        <div class="rounded-xl border border-amber-500/30 bg-amber-950/20 p-4">
-          <div class="text-xs text-amber-300">Əl İlə Müraciət (CV Hazır / E-poçt Yoxdur)</div>
-          <div id="kpi-manual" class="text-2xl font-bold text-amber-400 mt-1">0</div>
-        </div>
-      </div>
-
-      <div class="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-          <div>
-            <h2 class="font-bold text-base text-white">Yekun Təsdiq və Göndəriş</h2>
-            <p class="text-xs text-slate-400">E-poçtu olan seçilmiş vakansiyalara fərdi CV göndəriləcək, digərləri isə Excel siyahısına əlavə olunacaq.</p>
-          </div>
-
-          <div class="flex items-center gap-4">
-            <label class="flex items-center gap-2 text-xs bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 cursor-pointer">
-              <input id="sendDryRun" type="checkbox" class="accent-blue-500" />
-              <span>Test rejimi (Göndərmədən yoxla)</span>
+        <div class="bar">
+          <div class="bar-group">
+            <button type="button" onclick="startScan()" class="btn primary">Skanı başlat</button>
+            <label class="check">
+              <input id="rescanCheck" type="checkbox" />
+              <span>Excel-dəki linkləri də yenidən yoxla</span>
             </label>
-            <button onclick="executeSend()" id="sendFinalBtn" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold text-white shadow-lg">
-              🚀 Təsdiqlə və Mümkün Olanlara Göndər
-            </button>
+          </div>
+          <div class="bar-group">
+            <button type="button" onclick="bulkSelect('matched')" class="btn ghost sm">Uyğunlar</button>
+            <button type="button" onclick="bulkSelect('email_only')" class="btn ghost sm">E-poçtu olanlar</button>
+            <button type="button" onclick="bulkSelect('none')" class="btn ghost sm">Sıfırla</button>
           </div>
         </div>
 
-        <div id="finalReviewList" class="divide-y divide-slate-800 text-sm"></div>
-      </div>
-    </section>
+        <div class="bar">
+          <div class="seg" role="tablist">
+            <button type="button" onclick="setFilter('all')" id="flt-all" class="flt-btn is-active">Hamısı <span id="cnt-all">0</span></button>
+            <button type="button" onclick="setFilter('selected')" id="flt-selected" class="flt-btn">Seçilənlər <span id="cnt-sel">0</span></button>
+            <button type="button" onclick="setFilter('email')" id="flt-email" class="flt-btn">E-poçt <span id="cnt-email">0</span></button>
+          </div>
+          <button type="button" onclick="goStep(3)" class="btn primary sm">CV mərhələsinə keç</button>
+        </div>
 
-  </main>
+        <div class="card table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-check">Seç</th>
+                <th>Bal</th>
+                <th>Vakansiya</th>
+                <th>E-poçt</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="jobsTableBody">
+              <tr><td colspan="5" class="empty">Hələ skan edilməyib.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-  <!-- PDF PREVIEW MODAL -->
-  <div id="pdfModal" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
-      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-        <span id="pdfModalTitle" class="font-semibold text-sm text-white">CV Önizləmə</span>
-        <div class="flex items-center gap-3">
-          <a id="pdfDownloadLink" href="#" download class="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-medium text-white">Yüklə</a>
-          <button onclick="closePdfModal()" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">Bağla ✕</button>
+      <section id="step-3" class="step-panel hidden">
+        <div class="page-head">
+          <div>
+            <h2>CV və məktub</h2>
+            <p class="lead">Seçilmiş elanlar üçün bir səhifəlik CV və məktub hazırlanır.</p>
+          </div>
+          <div class="bar-group">
+            <button type="button" onclick="generateCVs(null)" class="btn primary">Seçilənlər üçün CV yarat</button>
+            <button type="button" onclick="goStep(4)" class="btn ghost">Göndərişə keç</button>
+          </div>
+        </div>
+        <div id="cvCardsContainer" class="stack"></div>
+      </section>
+
+      <section id="step-4" class="step-panel hidden">
+        <div class="page-head">
+          <div>
+            <h2>Yoxlama və göndəriş</h2>
+            <p class="lead">E-poçtu olanlara CV göndərilir, qalanlar Excel siyahısına düşür.</p>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-label">Seçilmiş</div>
+            <div id="kpi-total" class="stat-num">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">E-poçtla</div>
+            <div id="kpi-email" class="stat-num good">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Əl ilə</div>
+            <div id="kpi-manual" class="stat-num warn">0</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="page-head" style="margin-bottom: 8px;">
+            <div>
+              <h3 style="margin:0;font-size:14px;">Təsdiq</h3>
+              <p class="lead">Göndərməzdən əvvəl siyahını yoxlayın.</p>
+            </div>
+            <div class="bar-group">
+              <label class="check">
+                <input id="sendDryRun" type="checkbox" />
+                <span>Test rejimi</span>
+              </label>
+              <button type="button" onclick="executeSend()" id="sendFinalBtn" class="btn primary">Təsdiqlə və göndər</button>
+            </div>
+          </div>
+          <div id="finalReviewList"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="pdfModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-bar">
+        <strong id="pdfModalTitle">CV</strong>
+        <div class="bar-group">
+          <a id="pdfDownloadLink" href="#" download class="btn primary sm">Yüklə</a>
+          <button type="button" onclick="closePdfModal()" class="btn ghost sm">Bağla</button>
         </div>
       </div>
-      <iframe id="pdfFrame" src="" class="w-full flex-1 bg-white"></iframe>
+      <iframe id="pdfFrame" title="CV önizləmə"></iframe>
     </div>
   </div>
+  <div id="toast" class="toast" role="status"></div>
 
 <script>
   let appState = { profile: {}, sources_text: "", settings: {}, jobs: [], task: {} };
   let currentStep = 1;
   let currentFilter = "all";
   let pollTimer = null;
+  let toastTimer = null;
+
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[ch]));
+  }
+
+  function hostOf(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function toast(message) {
+    const el = document.getElementById("toast");
+    el.textContent = message;
+    el.classList.add("is-on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("is-on"), 3800);
+  }
 
   function goStep(step) {
     currentStep = step;
-    document.querySelectorAll(".step-panel").forEach(el => el.classList.add("hidden"));
+    document.querySelectorAll(".step-panel").forEach((el) => el.classList.add("hidden"));
     document.getElementById(`step-${step}`).classList.remove("hidden");
-
     document.querySelectorAll(".step-tab").forEach((btn, i) => {
-      if (i + 1 === step) {
-        btn.className = "step-tab text-left p-3.5 rounded-xl border border-blue-500 bg-blue-600/15 text-white shadow";
-      } else {
-        btn.className = "step-tab text-left p-3.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700";
-      }
+      btn.classList.toggle("is-active", i + 1 === step);
     });
     renderAll();
   }
@@ -315,7 +815,6 @@
     populateStep1();
     renderAll();
     updateTaskUI(appState.task);
-
     if (appState.task && appState.task.running && !pollTimer) {
       pollTimer = setInterval(pollTask, 1500);
     }
@@ -328,7 +827,6 @@
     appState.task = data.task;
     updateTaskUI(data.task);
     renderAll();
-
     if (!data.task.running) {
       clearInterval(pollTimer);
       pollTimer = null;
@@ -348,18 +846,12 @@
     logsEl.textContent = (task.logs || []).join("\n");
     logsEl.scrollTop = logsEl.scrollHeight;
 
-    const spinner = document.getElementById("taskSpinner");
-    const cancelBtn = document.getElementById("cancelBtn");
-    const title = document.getElementById("taskTitle");
-    if (task.running) {
-      spinner.classList.remove("hidden");
-      cancelBtn.classList.remove("hidden");
-      title.textContent = task.step === "scan" ? "Vakansiyalar skan edilir və qiymətləndirilir..." : "Fərdi PDF CV və məktublar hazırlanır...";
-    } else {
-      spinner.classList.add("hidden");
-      cancelBtn.classList.add("hidden");
-      title.textContent = "Proses tamamlandı.";
-    }
+    const running = !!task.running;
+    document.getElementById("taskSpinner").classList.toggle("hidden", !running);
+    document.getElementById("cancelBtn").classList.toggle("hidden", !running);
+    document.getElementById("taskTitle").textContent = running
+      ? (task.step === "scan" ? "Vakansiyalar skan edilir" : "CV və məktublar hazırlanır")
+      : "Proses tamamlandı";
   }
 
   function populateStep1() {
@@ -381,11 +873,11 @@
 
     const badge = document.getElementById("modeBadge");
     if (s.dry_run) {
-      badge.textContent = "Test Rejimi (DRY_RUN)";
-      badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+      badge.textContent = "Test rejimi";
+      badge.className = "mode-badge is-test";
     } else {
-      badge.textContent = "Real Göndəriş Aktiv";
-      badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+      badge.textContent = "Canlı göndəriş";
+      badge.className = "mode-badge is-live";
     }
   }
 
@@ -397,23 +889,28 @@
     p.phone = document.getElementById("p_phone").value.trim();
     p.linkedin = document.getElementById("p_linkedin").value.trim();
     p.github = document.getElementById("p_github").value.trim();
-    p.core_skills = document.getElementById("p_skills").value.split(",").map(s => s.trim()).filter(Boolean);
+    p.core_skills = document.getElementById("p_skills").value.split(",").map((s) => s.trim()).filter(Boolean);
 
     const payload = {
       profile: p,
       sources_text: document.getElementById("s_sources").value,
-      min_score: parseInt(document.getElementById("s_min_score").value || "80"),
-      max_jobs: parseInt(document.getElementById("s_max_jobs").value || "15"),
+      min_score: parseInt(document.getElementById("s_min_score").value || "80", 10),
+      max_jobs: parseInt(document.getElementById("s_max_jobs").value || "15", 10),
       dry_run: document.getElementById("s_dry_run").checked,
     };
 
-    await fetch("/api/profile/save", {
+    const res = await fetch("/api/profile/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      toast("Saxlanılmadı.");
+      return;
+    }
     await fetchState();
     if (nextStep) goStep(2);
+    else toast("Saxlanıldı.");
   }
 
   async function uploadNewCV(ev) {
@@ -421,15 +918,26 @@
     if (!file) return;
     const fd = new FormData();
     fd.append("file", file);
-    alert("Yeni CV yüklənir və analiz edilir, bir neçə saniyə gözləyin...");
-    await fetch("/api/profile/upload-cv", { method: "POST", body: fd });
+    toast("CV analiz edilir…");
+    const res = await fetch("/api/profile/upload-cv", { method: "POST", body: fd });
+    ev.target.value = "";
+    if (!res.ok) {
+      toast("Yalnız PDF qəbul olunur.");
+      return;
+    }
     await fetchState();
+    toast("Profil yeniləndi.");
   }
 
   async function reparseCV() {
-    alert("cv.pdf yenidən analiz edilir...");
-    await fetch("/api/profile/reparse", { method: "POST" });
+    toast("CV yenidən oxunur…");
+    const res = await fetch("/api/profile/reparse", { method: "POST" });
+    if (!res.ok) {
+      toast("cv.pdf tapılmadı.");
+      return;
+    }
     await fetchState();
+    toast("Profil yeniləndi.");
   }
 
   async function startScan() {
@@ -439,26 +947,26 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rescan_existing: rescan }),
     });
-    if (res.ok && !pollTimer) {
-      pollTimer = setInterval(pollTask, 1500);
+    if (res.status === 409) {
+      toast("Başqa proses artıq gedir.");
+      return;
     }
+    if (res.ok && !pollTimer) pollTimer = setInterval(pollTask, 1500);
   }
 
   async function cancelTask() {
     await fetch("/api/task/cancel", { method: "POST" });
   }
 
-  function setFilter(f) {
-    currentFilter = f;
-    document.querySelectorAll(".flt-btn").forEach(b => {
-      b.className = "flt-btn px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300";
-    });
-    document.getElementById(`flt-${f}`).className = "flt-btn px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium";
+  function setFilter(name) {
+    currentFilter = name;
+    document.querySelectorAll(".flt-btn").forEach((btn) => btn.classList.remove("is-active"));
+    document.getElementById(`flt-${name}`).classList.add("is-active");
     renderStep2();
   }
 
   async function updateJobField(jobId, fields) {
-    const job = appState.jobs.find(j => j.id === jobId);
+    const job = appState.jobs.find((j) => j.id === jobId);
     if (job) Object.assign(job, fields);
     renderAll();
     await fetch("/api/jobs/update", {
@@ -483,9 +991,11 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ job_id: jobId }),
     });
-    if (res.ok && !pollTimer) {
-      pollTimer = setInterval(pollTask, 1500);
+    if (res.status === 409) {
+      toast("Başqa proses artıq gedir.");
+      return;
     }
+    if (res.ok && !pollTimer) pollTimer = setInterval(pollTask, 1500);
   }
 
   function openPdfModal(url, title) {
@@ -504,8 +1014,7 @@
     const dryRun = document.getElementById("sendDryRun").checked;
     const btn = document.getElementById("sendFinalBtn");
     btn.disabled = true;
-    btn.textContent = "Göndərilir...";
-
+    btn.textContent = "Göndərilir…";
     try {
       const res = await fetch("/api/step4/send", {
         method: "POST",
@@ -513,21 +1022,27 @@
         body: JSON.stringify({ dry_run: dryRun }),
       });
       const data = await res.json();
-      alert(`Tamamlandı!\nE-poçt göndərilən: ${data.sent_count}\nƏl ilə müraciət (CV hazır): ${data.manual_count}\nNəticələr applications.xlsx faylına yazıldı.`);
+      toast(`Tamamlandı. E-poçt: ${data.sent_count}, əl ilə: ${data.manual_count}.`);
       await fetchState();
     } finally {
       btn.disabled = false;
-      btn.textContent = "🚀 Təsdiqlə və Mümkün Olanlara Göndər";
+      btn.textContent = "Təsdiqlə və göndər";
     }
+  }
+
+  function scoreClass(score) {
+    if (score >= 85) return "high";
+    if (score >= 80) return "mid";
+    return "";
   }
 
   function renderStep2() {
     const jobs = appState.jobs || [];
     document.getElementById("cnt-all").textContent = jobs.length;
-    document.getElementById("cnt-sel").textContent = jobs.filter(j => j.selected).length;
-    document.getElementById("cnt-email").textContent = jobs.filter(j => j.hr_email).length;
+    document.getElementById("cnt-sel").textContent = jobs.filter((j) => j.selected).length;
+    document.getElementById("cnt-email").textContent = jobs.filter((j) => j.hr_email).length;
 
-    const filtered = jobs.filter(j => {
+    const filtered = jobs.filter((j) => {
       if (currentFilter === "selected") return j.selected;
       if (currentFilter === "email") return !!j.hr_email;
       return true;
@@ -535,117 +1050,105 @@
 
     const tbody = document.getElementById("jobsTableBody");
     if (filtered.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-500">Bu filtrə uyğun vakansiya yoxdur.</td></tr>`;
+      const msg = jobs.length === 0 ? "Hələ skan edilməyib." : "Bu filtrə uyğun vakansiya yoxdur.";
+      tbody.innerHTML = `<tr><td colspan="5" class="empty">${msg}</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = filtered.map(j => {
-      const scoreColor = j.match_score >= 85 ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-        : j.match_score >= 80 ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
-        : "bg-slate-800 text-slate-400 border-slate-700";
-
-      return `
-        <tr class="hover:bg-slate-800/40 transition">
-          <td class="p-3">
-            <input type="checkbox" ${j.selected ? "checked" : ""} onchange="updateJobField('${j.id}', {selected: this.checked})" class="w-4 h-4 accent-blue-600 cursor-pointer" />
-          </td>
-          <td class="p-3">
-            <span class="px-2.5 py-1 rounded-md text-xs font-bold border ${scoreColor}">${j.match_score}%</span>
-          </td>
-          <td class="p-3">
-            <div class="font-semibold text-white">${j.company}</div>
-            <a href="${j.job_url}" target="_blank" class="text-xs text-blue-400 hover:underline">${j.title} ↗</a>
-          </td>
-          <td class="p-3">
-            <input type="email" value="${j.hr_email || ""}" placeholder="E-poçt tapılmadı (istəsəniz yazın)"
-              onchange="updateJobField('${j.id}', {hr_email: this.value})"
-              class="w-full bg-slate-950 border ${j.hr_email ? "border-emerald-500/40 text-emerald-300" : "border-slate-800 text-slate-300"} rounded-lg px-2.5 py-1.5 text-xs" />
-          </td>
-          <td class="p-3 text-xs text-slate-300">${j.status}</td>
-        </tr>
-      `;
-    }).join("");
+    tbody.innerHTML = filtered.map((j) => `
+      <tr>
+        <td>
+          <input type="checkbox" ${j.selected ? "checked" : ""} onchange="updateJobField('${j.id}', {selected: this.checked})" />
+        </td>
+        <td><span class="score ${scoreClass(j.match_score)}">${j.match_score}%</span></td>
+        <td>
+          <div class="company">${esc(j.company)}</div>
+          <a class="job-link" href="${esc(j.job_url)}" target="_blank" rel="noopener">${esc(j.title)}</a>
+          <div class="job-meta">${esc([hostOf(j.source), j.posted_at].filter(Boolean).join(" · "))}</div>
+        </td>
+        <td class="mail">
+          <input type="email" value="${esc(j.hr_email || "")}" placeholder="E-poçt yoxdur"
+            onchange="updateJobField('${j.id}', {hr_email: this.value})"
+            class="field sm ${j.hr_email ? "is-set" : ""}" />
+        </td>
+        <td class="status">${esc(j.status)}</td>
+      </tr>
+    `).join("");
   }
 
   function renderStep3() {
-    const selected = (appState.jobs || []).filter(j => j.selected);
+    const selected = (appState.jobs || []).filter((j) => j.selected);
     const box = document.getElementById("cvCardsContainer");
-
     if (selected.length === 0) {
-      box.innerHTML = `<div class="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-slate-500">Addım 2-də heç bir vakansiya seçilməyib.</div>`;
+      box.innerHTML = `<div class="card quiet">Seçilmiş vakansiya yoxdur.</div>`;
       return;
     }
 
-    box.innerHTML = selected.map(j => `
-      <div class="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+    box.innerHTML = selected.map((j) => `
+      <article class="card cv-card">
+        <div class="cv-top">
           <div>
-            <span class="text-xs font-bold text-blue-400">${j.match_score}% Uyğunluq</span>
-            <h3 class="font-bold text-base text-white">${j.company} — ${j.title}</h3>
-            <div class="text-xs text-slate-400 mt-0.5">
-              Kanal: ${j.hr_email ? `<span class="text-emerald-400 font-medium">E-poçt (${j.hr_email})</span>` : `<span class="text-amber-400">Əl ilə müraciət (E-poçt yoxdur)</span>`}
+            <div class="score-line ${scoreClass(j.match_score)}">${j.match_score}% uyğunluq</div>
+            <h3 class="cv-title">${esc(j.company)} — ${esc(j.title)}</h3>
+            <div class="channel">
+              ${j.hr_email
+                ? `<span class="good">${esc(j.hr_email)}</span>`
+                : `<span class="warn">E-poçt yoxdur, əl ilə müraciət</span>`}
             </div>
           </div>
-
-          <div class="flex items-center gap-2">
-            ${j.pdf_url ? `<button onclick="openPdfModal('${j.pdf_url}', '${j.company} — ${j.title}')" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">👁 PDF CV-yə Bax</button>` : ""}
-            <button onclick="generateCVs('${j.id}')" class="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700">
-              ${j.cv_ready ? "🔄 Yenidən Yarat" : "⚡ CV Yarat"}
-            </button>
+          <div class="bar-group">
+            ${j.pdf_url ? `<button type="button" class="btn ghost sm" data-pdf="${esc(j.pdf_url)}" data-title="${esc(j.company)} — ${esc(j.title)}" onclick="openPdfModal(this.dataset.pdf, this.dataset.title)">PDF-ə bax</button>` : ""}
+            <button type="button" class="btn ghost sm" onclick="generateCVs('${j.id}')">${j.cv_ready ? "Yenidən yarat" : "CV yarat"}</button>
           </div>
         </div>
-
         ${j.cv_ready ? `
-          <div class="grid grid-cols-1 gap-3 text-xs">
+          <div class="stack">
             <div>
-              <label class="block text-slate-400 mb-1">E-poçt Mövzusu (Subject)</label>
-              <input value="${(j.email_subject || "").replace(/"/g, "&quot;")}" onchange="updateJobField('${j.id}', {email_subject: this.value})"
-                class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200" />
+              <label class="lbl">Mövzu</label>
+              <input class="field" value="${esc(j.email_subject || "")}" onchange="updateJobField('${j.id}', {email_subject: this.value})" />
             </div>
             <div>
-              <label class="block text-slate-400 mb-1">Motivasiya Məktubu (Cover Letter)</label>
-              <textarea rows="4" onchange="updateJobField('${j.id}', {cover_letter: this.value})"
-                class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200">${j.cover_letter || ""}</textarea>
+              <label class="lbl">Məktub</label>
+              <textarea rows="4" class="field" onchange="updateJobField('${j.id}', {cover_letter: this.value})">${esc(j.cover_letter || "")}</textarea>
             </div>
           </div>
-        ` : `<div class="text-xs text-slate-500">Bu vakansiya üçün hələ fərdi CV yaradılmayıb.</div>`}
-      </div>
+        ` : `<p class="note">Bu elan üçün hələ CV yaradılmayıb.</p>`}
+      </article>
     `).join("");
   }
 
   function renderStep4() {
-    const selected = (appState.jobs || []).filter(j => j.selected);
-    const emailJobs = selected.filter(j => j.hr_email && j.cv_ready);
-    const manualJobs = selected.filter(j => !j.hr_email || !j.cv_ready);
-
+    const selected = (appState.jobs || []).filter((j) => j.selected);
+    const emailJobs = selected.filter((j) => j.hr_email && j.cv_ready);
+    const manualJobs = selected.filter((j) => !j.hr_email || !j.cv_ready);
     document.getElementById("kpi-total").textContent = selected.length;
     document.getElementById("kpi-email").textContent = emailJobs.length;
     document.getElementById("kpi-manual").textContent = manualJobs.length;
 
     const list = document.getElementById("finalReviewList");
     if (selected.length === 0) {
-      list.innerHTML = `<div class="py-8 text-center text-slate-500">Göndəriş üçün seçilmiş vakansiya yoxdur.</div>`;
+      list.innerHTML = `<div class="quiet">Göndəriş üçün seçilmiş vakansiya yoxdur.</div>`;
       return;
     }
 
-    list.innerHTML = selected.map(j => {
+    list.innerHTML = selected.map((j) => {
       const canEmail = j.hr_email && j.cv_ready;
       return `
-        <div class="py-3 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex items-center gap-3">
-            <input type="checkbox" checked onchange="updateJobField('${j.id}', {selected: this.checked})" class="w-4 h-4 accent-emerald-500" />
+        <div class="review-row">
+          <div class="review-main">
+            <input type="checkbox" checked onchange="updateJobField('${j.id}', {selected: this.checked})" />
             <div>
-              <div class="font-semibold text-white">${j.company} — ${j.title}</div>
-              <div class="text-xs text-slate-400">
-                ${canEmail ? `Göndəriləcək ünvan: <span class="text-emerald-400">${j.hr_email}</span>` : `E-poçt yoxdur — <a href="${j.job_url}" target="_blank" class="text-blue-400 underline">Vakansiya linki ↗</a>`}
+              <div class="review-title">${esc(j.company)} — ${esc(j.title)}</div>
+              <div class="review-sub">
+                ${canEmail
+                  ? esc(j.hr_email)
+                  : `E-poçt yoxdur · <a href="${esc(j.job_url)}" target="_blank" rel="noopener">elan</a>`}
               </div>
             </div>
           </div>
-          <div class="flex items-center gap-2">
-            ${j.pdf_url ? `<button onclick="openPdfModal('${j.pdf_url}', '${j.company}')" class="px-2.5 py-1 rounded bg-slate-800 text-xs hover:bg-slate-700">CV-yə Bax</button>` : ""}
-            <span class="px-2.5 py-1 rounded-full text-xs ${canEmail ? "bg-emerald-500/20 text-emerald-300" : "bg-amber-500/20 text-amber-300"}">
-              ${j.status}
-            </span>
+          <div class="review-side">
+            ${j.pdf_url ? `<button type="button" class="btn ghost sm" data-pdf="${esc(j.pdf_url)}" data-title="${esc(j.company)}" onclick="openPdfModal(this.dataset.pdf, this.dataset.title)">CV</button>` : ""}
+            <span class="pill ${canEmail ? "good" : "warn"}">${esc(j.status)}</span>
           </div>
         </div>
       `;
@@ -657,6 +1160,10 @@
     renderStep3();
     renderStep4();
   }
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") closePdfModal();
+  });
 
   goStep(1);
   fetchState();
