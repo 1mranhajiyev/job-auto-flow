@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Job Auto-Flow Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+  <!-- TOP NAVBAR -->
+  <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-30 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow">JA</div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white">Job Auto-Flow Studio</h1>
+          <p class="text-xs text-slate-400">Addım-addım İnteraktiv İş Axtarışı, Fərdi CV və E-poçt Müraciət Paneli</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <span id="modeBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+          Real Göndəriş Aktiv
+        </span>
+        <a href="/api/export/excel" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700 transition">
+          Excel Yüklə (.xlsx)
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- STEPPER NAVIGATION -->
+  <div class="max-w-7xl mx-auto px-4 pt-6">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <button onclick="goStep(1)" id="tab-1" class="step-tab text-left p-3.5 rounded-xl border transition">
+        <div class="text-xs uppercase tracking-wider opacity-75">Addım 1</div>
+        <div class="font-semibold text-sm mt-0.5">Profil və Mənbələr</div>
+      </button>
+      <button onclick="goStep(2)" id="tab-2" class="step-tab text-left p-3.5 rounded-xl border transition">
+        <div class="text-xs uppercase tracking-wider opacity-75">Addım 2</div>
+        <div class="font-semibold text-sm mt-0.5">Vakansiya Skanı və Seçim</div>
+      </button>
+      <button onclick="goStep(3)" id="tab-3" class="step-tab text-left p-3.5 rounded-xl border transition">
+        <div class="text-xs uppercase tracking-wider opacity-75">Addım 3</div>
+        <div class="font-semibold text-sm mt-0.5">CV və Məktub Hazırlığı</div>
+      </button>
+      <button onclick="goStep(4)" id="tab-4" class="step-tab text-left p-3.5 rounded-xl border transition">
+        <div class="text-xs uppercase tracking-wider opacity-75">Addım 4</div>
+        <div class="font-semibold text-sm mt-0.5">Yoxlama və Göndəriş</div>
+      </button>
+    </div>
+
+    <!-- LIVE PROGRESS / LOG BAR -->
+    <div id="taskBox" class="hidden mb-6 rounded-xl border border-blue-500/40 bg-slate-900 p-4 shadow-lg">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2.5">
+          <span id="taskSpinner" class="w-3 h-3 rounded-full bg-blue-500 animate-ping"></span>
+          <span id="taskTitle" class="font-semibold text-sm text-blue-300">Proses icra olunur...</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span id="taskPct" class="text-xs font-mono text-slate-300">0%</span>
+          <button id="cancelBtn" onclick="cancelTask()" class="px-2.5 py-1 rounded bg-rose-600/80 hover:bg-rose-600 text-xs font-medium">
+            Dayandır
+          </button>
+        </div>
+      </div>
+      <div class="w-full bg-slate-800 rounded-full h-2 mb-3 overflow-hidden">
+        <div id="taskBar" class="bg-blue-500 h-2 transition-all duration-300" style="width: 0%"></div>
+      </div>
+      <pre id="taskLogs" class="text-xs font-mono text-slate-300 bg-slate-950/90 p-3 rounded-lg max-h-40 overflow-y-auto border border-slate-800"></pre>
+    </div>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <main class="max-w-7xl mx-auto px-4 pb-16">
+
+    <!-- ==================== STEP 1 ==================== -->
+    <section id="step-1" class="step-panel space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Candidate Profile -->
+        <div class="lg:col-span-2 rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <h2 class="font-bold text-base text-white">Namizəd Profili (profile.json)</h2>
+            <div class="flex items-center gap-2">
+              <label class="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700">
+                Yeni CV Yüklə (.pdf)
+                <input type="file" accept=".pdf" class="hidden" onchange="uploadNewCV(event)" />
+              </label>
+              <button onclick="reparseCV()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700">
+                cv.pdf Yenidən Oxu
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Ad və Soyad</label>
+              <input id="p_full_name" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Əsas Vəzifə Başlığı (Headline)</label>
+              <input id="p_headline" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">E-poçt</label>
+              <input id="p_email" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Telefon</label>
+              <input id="p_phone" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">LinkedIn URL</label>
+              <input id="p_linkedin" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">GitHub URL</label>
+              <input id="p_github" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs text-slate-400 mb-1">Əsas Bacarıqlar (vergüllə ayrılmış)</label>
+              <textarea id="p_skills" rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Settings & Sources -->
+        <div class="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+          <h2 class="font-bold text-base text-white border-b border-slate-800 pb-3">Axtarış və Göndəriş Ayarları</h2>
+
+          <div class="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Minimum Uyğunluq %</label>
+              <input id="s_min_score" type="number" min="50" max="100" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Mənbə Başına Limit</label>
+              <input id="s_max_jobs" type="number" min="1" max="30" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2" />
+            </div>
+          </div>
+
+          <label class="flex items-center gap-2.5 text-sm bg-slate-950 p-3 rounded-lg border border-slate-800 cursor-pointer">
+            <input id="s_dry_run" type="checkbox" class="w-4 h-4 accent-blue-600" />
+            <span>Test Rejimi (DRY_RUN — real e-poçt göndərmə)</span>
+          </label>
+
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Mənbə Portallar (sources.txt)</label>
+            <textarea id="s_sources" rows="8" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3">
+        <button onclick="saveStep1(false)" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-semibold border border-slate-700">
+          Yadda Saxla
+        </button>
+        <button onclick="saveStep1(true)" class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white shadow">
+          Yadda Saxla və Addım 2-yə Keç →
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== STEP 2 ==================== -->
+    <section id="step-2" class="step-panel hidden space-y-5">
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <button onclick="startScan()" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white shadow">
+            🔍 Vakansiyaları Skan Et və Qiymətləndir
+          </button>
+          <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+            <input id="rescanCheck" type="checkbox" class="accent-blue-500" />
+            <span>Artıq Excel-də olan linkləri də yenidən yoxla</span>
+          </label>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <button onclick="bulkSelect('matched')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">Uyğunları Seç</button>
+          <button onclick="bulkSelect('email_only')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">Yalnız E-poçtu Olanlar</button>
+          <button onclick="bulkSelect('none')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">Seçimi Sıfırla</button>
+        </div>
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="flex items-center justify-between">
+        <div class="flex gap-2 text-xs">
+          <button onclick="setFilter('all')" id="flt-all" class="flt-btn px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium">Hamısı (<span id="cnt-all">0</span>)</button>
+          <button onclick="setFilter('selected')" id="flt-selected" class="flt-btn px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">Seçilənlər (<span id="cnt-sel">0</span>)</button>
+          <button onclick="setFilter('email')" id="flt-email" class="flt-btn px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">HR E-poçtu Olanlar (<span id="cnt-email">0</span>)</button>
+        </div>
+        <button onclick="goStep(3)" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">
+          Seçilənlər Üçün CV Hazırlığına Keç (Addım 3) →
+        </button>
+      </div>
+
+      <!-- Jobs Table -->
+      <div class="rounded-xl border border-slate-800 bg-slate-900 overflow-x-auto">
+        <table class="w-full text-left border-collapse text-sm">
+          <thead>
+            <tr class="border-b border-slate-800 bg-slate-950/60 text-xs text-slate-400 uppercase">
+              <th class="p-3 w-10">Seç</th>
+              <th class="p-3 w-20">Bal</th>
+              <th class="p-3">Şirkət və Vəzifə</th>
+              <th class="p-3 w-72">HR / Şirkət E-poçtu (Redaktə edilə bilər)</th>
+              <th class="p-3 w-44">Status</th>
+            </tr>
+          </thead>
+          <tbody id="jobsTableBody" class="divide-y divide-slate-800/80">
+            <tr><td colspan="5" class="p-8 text-center text-slate-500">Hələ vakansiya skan edilməyib. Yuxarıdakı düymə ilə axtarışı başladın.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== STEP 3 ==================== -->
+    <section id="step-3" class="step-panel hidden space-y-5">
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-4 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="font-bold text-base text-white">Fərdi CV və Motivasiya Məktubu Generasiyası</h2>
+          <p class="text-xs text-slate-400">Addım 2-də seçdiyiniz vakansiyalar üçün təsvirə uyğun 1 səhifəlik PDF CV və məktub hazırlanır.</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <button onclick="generateCVs(null)" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white shadow">
+            📄 Seçilmiş Vakansiyalar Üçün CV Yarat
+          </button>
+          <button onclick="goStep(4)" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white">
+            Göndəriş Mərhələsinə Keç (Addım 4) →
+          </button>
+        </div>
+      </div>
+
+      <div id="cvCardsContainer" class="space-y-4"></div>
+    </section>
+
+    <!-- ==================== STEP 4 ==================== -->
+    <section id="step-4" class="step-panel hidden space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <div class="text-xs text-slate-400">Seçilmiş Ümumi Vakansiya</div>
+          <div id="kpi-total" class="text-2xl font-bold text-white mt-1">0</div>
+        </div>
+        <div class="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4">
+          <div class="text-xs text-emerald-300">Avtomatik E-poçt Göndəriləcək</div>
+          <div id="kpi-email" class="text-2xl font-bold text-emerald-400 mt-1">0</div>
+        </div>
+        <div class="rounded-xl border border-amber-500/30 bg-amber-950/20 p-4">
+          <div class="text-xs text-amber-300">Əl İlə Müraciət (CV Hazır / E-poçt Yoxdur)</div>
+          <div id="kpi-manual" class="text-2xl font-bold text-amber-400 mt-1">0</div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <h2 class="font-bold text-base text-white">Yekun Təsdiq və Göndəriş</h2>
+            <p class="text-xs text-slate-400">E-poçtu olan seçilmiş vakansiyalara fərdi CV göndəriləcək, digərləri isə Excel siyahısına əlavə olunacaq.</p>
+          </div>
+
+          <div class="flex items-center gap-4">
+            <label class="flex items-center gap-2 text-xs bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 cursor-pointer">
+              <input id="sendDryRun" type="checkbox" class="accent-blue-500" />
+              <span>Test rejimi (Göndərmədən yoxla)</span>
+            </label>
+            <button onclick="executeSend()" id="sendFinalBtn" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold text-white shadow-lg">
+              🚀 Təsdiqlə və Mümkün Olanlara Göndər
+            </button>
+          </div>
+        </div>
+
+        <div id="finalReviewList" class="divide-y divide-slate-800 text-sm"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- PDF PREVIEW MODAL -->
+  <div id="pdfModal" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+        <span id="pdfModalTitle" class="font-semibold text-sm text-white">CV Önizləmə</span>
+        <div class="flex items-center gap-3">
+          <a id="pdfDownloadLink" href="#" download class="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-medium text-white">Yüklə</a>
+          <button onclick="closePdfModal()" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs">Bağla ✕</button>
+        </div>
+      </div>
+      <iframe id="pdfFrame" src="" class="w-full flex-1 bg-white"></iframe>
+    </div>
+  </div>
+
+<script>
+  let appState = { profile: {}, sources_text: "", settings: {}, jobs: [], task: {} };
+  let currentStep = 1;
+  let currentFilter = "all";
+  let pollTimer = null;
+
+  function goStep(step) {
+    currentStep = step;
+    document.querySelectorAll(".step-panel").forEach(el => el.classList.add("hidden"));
+    document.getElementById(`step-${step}`).classList.remove("hidden");
+
+    document.querySelectorAll(".step-tab").forEach((btn, i) => {
+      if (i + 1 === step) {
+        btn.className = "step-tab text-left p-3.5 rounded-xl border border-blue-500 bg-blue-600/15 text-white shadow";
+      } else {
+        btn.className = "step-tab text-left p-3.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700";
+      }
+    });
+    renderAll();
+  }
+
+  async function fetchState() {
+    const res = await fetch("/api/state");
+    appState = await res.json();
+    populateStep1();
+    renderAll();
+    updateTaskUI(appState.task);
+
+    if (appState.task && appState.task.running && !pollTimer) {
+      pollTimer = setInterval(pollTask, 1500);
+    }
+  }
+
+  async function pollTask() {
+    const res = await fetch("/api/state");
+    const data = await res.json();
+    appState.jobs = data.jobs;
+    appState.task = data.task;
+    updateTaskUI(data.task);
+    renderAll();
+
+    if (!data.task.running) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function updateTaskUI(task) {
+    const box = document.getElementById("taskBox");
+    if (!task || (!task.running && (!task.logs || task.logs.length === 0))) {
+      box.classList.add("hidden");
+      return;
+    }
+    box.classList.remove("hidden");
+    document.getElementById("taskBar").style.width = `${task.progress || 0}%`;
+    document.getElementById("taskPct").textContent = `${task.progress || 0}%`;
+    const logsEl = document.getElementById("taskLogs");
+    logsEl.textContent = (task.logs || []).join("\n");
+    logsEl.scrollTop = logsEl.scrollHeight;
+
+    const spinner = document.getElementById("taskSpinner");
+    const cancelBtn = document.getElementById("cancelBtn");
+    const title = document.getElementById("taskTitle");
+    if (task.running) {
+      spinner.classList.remove("hidden");
+      cancelBtn.classList.remove("hidden");
+      title.textContent = task.step === "scan" ? "Vakansiyalar skan edilir və qiymətləndirilir..." : "Fərdi PDF CV və məktublar hazırlanır...";
+    } else {
+      spinner.classList.add("hidden");
+      cancelBtn.classList.add("hidden");
+      title.textContent = "Proses tamamlandı.";
+    }
+  }
+
+  function populateStep1() {
+    const p = appState.profile || {};
+    document.getElementById("p_full_name").value = p.full_name || "";
+    document.getElementById("p_headline").value = p.headline || "";
+    document.getElementById("p_email").value = p.email || "";
+    document.getElementById("p_phone").value = p.phone || "";
+    document.getElementById("p_linkedin").value = p.linkedin || "";
+    document.getElementById("p_github").value = p.github || "";
+    document.getElementById("p_skills").value = (p.core_skills || []).join(", ");
+
+    const s = appState.settings || {};
+    document.getElementById("s_min_score").value = s.min_score || 80;
+    document.getElementById("s_max_jobs").value = s.max_jobs || 15;
+    document.getElementById("s_dry_run").checked = !!s.dry_run;
+    document.getElementById("sendDryRun").checked = !!s.dry_run;
+    document.getElementById("s_sources").value = appState.sources_text || "";
+
+    const badge = document.getElementById("modeBadge");
+    if (s.dry_run) {
+      badge.textContent = "Test Rejimi (DRY_RUN)";
+      badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+    } else {
+      badge.textContent = "Real Göndəriş Aktiv";
+      badge.className = "px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+    }
+  }
+
+  async function saveStep1(nextStep) {
+    const p = { ...appState.profile };
+    p.full_name = document.getElementById("p_full_name").value.trim();
+    p.headline = document.getElementById("p_headline").value.trim();
+    p.email = document.getElementById("p_email").value.trim();
+    p.phone = document.getElementById("p_phone").value.trim();
+    p.linkedin = document.getElementById("p_linkedin").value.trim();
+    p.github = document.getElementById("p_github").value.trim();
+    p.core_skills = document.getElementById("p_skills").value.split(",").map(s => s.trim()).filter(Boolean);
+
+    const payload = {
+      profile: p,
+      sources_text: document.getElementById("s_sources").value,
+      min_score: parseInt(document.getElementById("s_min_score").value || "80"),
+      max_jobs: parseInt(document.getElementById("s_max_jobs").value || "15"),
+      dry_run: document.getElementById("s_dry_run").checked,
+    };
+
+    await fetch("/api/profile/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await fetchState();
+    if (nextStep) goStep(2);
+  }
+
+  async function uploadNewCV(ev) {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    alert("Yeni CV yüklənir və analiz edilir, bir neçə saniyə gözləyin...");
+    await fetch("/api/profile/upload-cv", { method: "POST", body: fd });
+    await fetchState();
+  }
+
+  async function reparseCV() {
+    alert("cv.pdf yenidən analiz edilir...");
+    await fetch("/api/profile/reparse", { method: "POST" });
+    await fetchState();
+  }
+
+  async function startScan() {
+    const rescan = document.getElementById("rescanCheck").checked;
+    const res = await fetch("/api/step2/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rescan_existing: rescan }),
+    });
+    if (res.ok && !pollTimer) {
+      pollTimer = setInterval(pollTask, 1500);
+    }
+  }
+
+  async function cancelTask() {
+    await fetch("/api/task/cancel", { method: "POST" });
+  }
+
+  function setFilter(f) {
+    currentFilter = f;
+    document.querySelectorAll(".flt-btn").forEach(b => {
+      b.className = "flt-btn px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300";
+    });
+    document.getElementById(`flt-${f}`).className = "flt-btn px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium";
+    renderStep2();
+  }
+
+  async function updateJobField(jobId, fields) {
+    const job = appState.jobs.find(j => j.id === jobId);
+    if (job) Object.assign(job, fields);
+    renderAll();
+    await fetch("/api/jobs/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_id: jobId, ...fields }),
+    });
+  }
+
+  async function bulkSelect(mode) {
+    await fetch("/api/jobs/bulk-select", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    await fetchState();
+  }
+
+  async function generateCVs(jobId) {
+    const res = await fetch("/api/step3/generate-cvs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_id: jobId }),
+    });
+    if (res.ok && !pollTimer) {
+      pollTimer = setInterval(pollTask, 1500);
+    }
+  }
+
+  function openPdfModal(url, title) {
+    document.getElementById("pdfModalTitle").textContent = title;
+    document.getElementById("pdfFrame").src = url + "?t=" + Date.now();
+    document.getElementById("pdfDownloadLink").href = url;
+    document.getElementById("pdfModal").classList.remove("hidden");
+  }
+
+  function closePdfModal() {
+    document.getElementById("pdfModal").classList.add("hidden");
+    document.getElementById("pdfFrame").src = "";
+  }
+
+  async function executeSend() {
+    const dryRun = document.getElementById("sendDryRun").checked;
+    const btn = document.getElementById("sendFinalBtn");
+    btn.disabled = true;
+    btn.textContent = "Göndərilir...";
+
+    try {
+      const res = await fetch("/api/step4/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dry_run: dryRun }),
+      });
+      const data = await res.json();
+      alert(`Tamamlandı!\nE-poçt göndərilən: ${data.sent_count}\nƏl ilə müraciət (CV hazır): ${data.manual_count}\nNəticələr applications.xlsx faylına yazıldı.`);
+      await fetchState();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "🚀 Təsdiqlə və Mümkün Olanlara Göndər";
+    }
+  }
+
+  function renderStep2() {
+    const jobs = appState.jobs || [];
+    document.getElementById("cnt-all").textContent = jobs.length;
+    document.getElementById("cnt-sel").textContent = jobs.filter(j => j.selected).length;
+    document.getElementById("cnt-email").textContent = jobs.filter(j => j.hr_email).length;
+
+    const filtered = jobs.filter(j => {
+      if (currentFilter === "selected") return j.selected;
+      if (currentFilter === "email") return !!j.hr_email;
+      return true;
+    });
+
+    const tbody = document.getElementById("jobsTableBody");
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-500">Bu filtrə uyğun vakansiya yoxdur.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(j => {
+      const scoreColor = j.match_score >= 85 ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+        : j.match_score >= 80 ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
+        : "bg-slate-800 text-slate-400 border-slate-700";
+
+      return `
+        <tr class="hover:bg-slate-800/40 transition">
+          <td class="p-3">
+            <input type="checkbox" ${j.selected ? "checked" : ""} onchange="updateJobField('${j.id}', {selected: this.checked})" class="w-4 h-4 accent-blue-600 cursor-pointer" />
+          </td>
+          <td class="p-3">
+            <span class="px-2.5 py-1 rounded-md text-xs font-bold border ${scoreColor}">${j.match_score}%</span>
+          </td>
+          <td class="p-3">
+            <div class="font-semibold text-white">${j.company}</div>
+            <a href="${j.job_url}" target="_blank" class="text-xs text-blue-400 hover:underline">${j.title} ↗</a>
+          </td>
+          <td class="p-3">
+            <input type="email" value="${j.hr_email || ""}" placeholder="E-poçt tapılmadı (istəsəniz yazın)"
+              onchange="updateJobField('${j.id}', {hr_email: this.value})"
+              class="w-full bg-slate-950 border ${j.hr_email ? "border-emerald-500/40 text-emerald-300" : "border-slate-800 text-slate-300"} rounded-lg px-2.5 py-1.5 text-xs" />
+          </td>
+          <td class="p-3 text-xs text-slate-300">${j.status}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  function renderStep3() {
+    const selected = (appState.jobs || []).filter(j => j.selected);
+    const box = document.getElementById("cvCardsContainer");
+
+    if (selected.length === 0) {
+      box.innerHTML = `<div class="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-slate-500">Addım 2-də heç bir vakansiya seçilməyib.</div>`;
+      return;
+    }
+
+    box.innerHTML = selected.map(j => `
+      <div class="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div>
+            <span class="text-xs font-bold text-blue-400">${j.match_score}% Uyğunluq</span>
+            <h3 class="font-bold text-base text-white">${j.company} — ${j.title}</h3>
+            <div class="text-xs text-slate-400 mt-0.5">
+              Kanal: ${j.hr_email ? `<span class="text-emerald-400 font-medium">E-poçt (${j.hr_email})</span>` : `<span class="text-amber-400">Əl ilə müraciət (E-poçt yoxdur)</span>`}
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            ${j.pdf_url ? `<button onclick="openPdfModal('${j.pdf_url}', '${j.company} — ${j.title}')" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">👁 PDF CV-yə Bax</button>` : ""}
+            <button onclick="generateCVs('${j.id}')" class="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700">
+              ${j.cv_ready ? "🔄 Yenidən Yarat" : "⚡ CV Yarat"}
+            </button>
+          </div>
+        </div>
+
+        ${j.cv_ready ? `
+          <div class="grid grid-cols-1 gap-3 text-xs">
+            <div>
+              <label class="block text-slate-400 mb-1">E-poçt Mövzusu (Subject)</label>
+              <input value="${(j.email_subject || "").replace(/"/g, "&quot;")}" onchange="updateJobField('${j.id}', {email_subject: this.value})"
+                class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200" />
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1">Motivasiya Məktubu (Cover Letter)</label>
+              <textarea rows="4" onchange="updateJobField('${j.id}', {cover_letter: this.value})"
+                class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200">${j.cover_letter || ""}</textarea>
+            </div>
+          </div>
+        ` : `<div class="text-xs text-slate-500">Bu vakansiya üçün hələ fərdi CV yaradılmayıb.</div>`}
+      </div>
+    `).join("");
+  }
+
+  function renderStep4() {
+    const selected = (appState.jobs || []).filter(j => j.selected);
+    const emailJobs = selected.filter(j => j.hr_email && j.cv_ready);
+    const manualJobs = selected.filter(j => !j.hr_email || !j.cv_ready);
+
+    document.getElementById("kpi-total").textContent = selected.length;
+    document.getElementById("kpi-email").textContent = emailJobs.length;
+    document.getElementById("kpi-manual").textContent = manualJobs.length;
+
+    const list = document.getElementById("finalReviewList");
+    if (selected.length === 0) {
+      list.innerHTML = `<div class="py-8 text-center text-slate-500">Göndəriş üçün seçilmiş vakansiya yoxdur.</div>`;
+      return;
+    }
+
+    list.innerHTML = selected.map(j => {
+      const canEmail = j.hr_email && j.cv_ready;
+      return `
+        <div class="py-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <input type="checkbox" checked onchange="updateJobField('${j.id}', {selected: this.checked})" class="w-4 h-4 accent-emerald-500" />
+            <div>
+              <div class="font-semibold text-white">${j.company} — ${j.title}</div>
+              <div class="text-xs text-slate-400">
+                ${canEmail ? `Göndəriləcək ünvan: <span class="text-emerald-400">${j.hr_email}</span>` : `E-poçt yoxdur — <a href="${j.job_url}" target="_blank" class="text-blue-400 underline">Vakansiya linki ↗</a>`}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            ${j.pdf_url ? `<button onclick="openPdfModal('${j.pdf_url}', '${j.company}')" class="px-2.5 py-1 rounded bg-slate-800 text-xs hover:bg-slate-700">CV-yə Bax</button>` : ""}
+            <span class="px-2.5 py-1 rounded-full text-xs ${canEmail ? "bg-emerald-500/20 text-emerald-300" : "bg-amber-500/20 text-amber-300"}">
+              ${j.status}
+            </span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderAll() {
+    renderStep2();
+    renderStep3();
+    renderStep4();
+  }
+
+  goStep(1);
+  fetchState();
+</script>
+</body>
+</html>
