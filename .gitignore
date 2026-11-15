@@ -8,5 +8,6 @@ profile.json
 state.json
 state.json.enc
 cv.pdf
+.playwright/
 information/video/node_modules/
 information/video/.remotion/
