@@ -2,6 +2,7 @@ import os
 import re
 import json
 import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -53,6 +54,50 @@ def log_msg(msg: str):
     if len(TASK_STATE["logs"]) > 120:
         TASK_STATE["logs"] = TASK_STATE["logs"][-120:]
     print(msg)
+
+
+_REMOTE_JOBS = {"at": 0.0, "jobs": None, "note": ""}
+
+
+def notified_jobs() -> tuple[list, str]:
+    """Telegramdakı elanlar şifrəli siyahıdadır. Saytın diski boş olanda oradan götürülür."""
+    now = time.monotonic()
+    if _REMOTE_JOBS["jobs"] is not None and now - _REMOTE_JOBS["at"] < 15:
+        return list(_REMOTE_JOBS["jobs"]), _REMOTE_JOBS["note"]
+    jobs: list = []
+    note = ""
+    try:
+        import state_sync
+        if state_sync.enabled():
+            remote = state_sync.load()
+            jobs = list(remote.get("jobs") or [])
+    except Exception as exc:
+        note = "Telegramdakı elanlar açılmadı. Render-dəki STATE_FERNET_KEY uyğun gəlmir."
+        print(f"Elan siyahısı açılmadı: {exc}")
+    _REMOTE_JOBS.update(at=now, jobs=jobs, note=note)
+    return list(jobs), note
+
+
+def jobs_for_page() -> tuple[list, str]:
+    local = load_state().get("jobs") or []
+    remote, note = notified_jobs()
+    merged: dict[str, dict] = {}
+    for job in remote:
+        if job.get("id"):
+            merged[job["id"]] = dict(job)
+    for job in local:
+        if not job.get("id"):
+            continue
+        merged[job["id"]] = {**merged.get(job["id"], {}), **job}
+    jobs = list(merged.values())
+    slug = profiles.active_slug()
+    if slug:
+        jobs = [job for job in jobs if not job.get("profile_slug") or job.get("profile_slug") == slug]
+    jobs.sort(key=lambda job: int(job.get("match_score") or 0), reverse=True)
+    if remote and not local:
+        save_state({"jobs": jobs})
+        _REMOTE_JOBS["jobs"] = jobs
+    return jobs, "" if jobs else note
 
 
 def load_state() -> dict:
@@ -150,7 +195,7 @@ def get_state():
         profile = main.analyze_cv(str(cv))
 
     sources_text = SOURCES_FILE.read_text(encoding="utf-8") if SOURCES_FILE.exists() else ""
-    state = load_state()
+    jobs, jobs_note = jobs_for_page()
 
     return {
         "profile": profile,
@@ -162,7 +207,8 @@ def get_state():
             "max_jobs": main.MAX_JOBS,
             "dry_run": main.DRY_RUN,
         },
-        "jobs": state.get("jobs", []),
+        "jobs": jobs,
+        "jobs_note": jobs_note,
         "task": TASK_STATE,
     }
 

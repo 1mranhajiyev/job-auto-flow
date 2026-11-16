@@ -1140,7 +1140,9 @@
 
     const tbody = document.getElementById("jobsTableBody");
     if (filtered.length === 0) {
-      const msg = jobs.length === 0 ? "Hələ skan edilməyib." : "Bu filtrə uyğun vakansiya yoxdur.";
+      const msg = jobs.length === 0
+        ? (appState.jobs_note || "Hələ skan edilməyib.")
+        : "Bu filtrə uyğun vakansiya yoxdur.";
       tbody.innerHTML = `<tr><td colspan="5" class="empty">${msg}</td></tr>`;
       return;
     }
