@@ -351,21 +351,67 @@ def _handle_callback(query: dict):
         ACTION_LOCK.release()
 
 
+def _command(text: str) -> str:
+    word = (text or "").strip().split(" ", 1)[0]
+    return word.split("@", 1)[0].lower()
+
+
+def _reply(chat: str, text: str):
+    try:
+        _api("sendMessage", {"chat_id": chat, "text": text})
+    except Exception:
+        pass
+
+
+def _request_scan() -> str:
+    import state_sync
+
+    repo = (os.getenv("GITHUB_REPOSITORY") or "").strip()
+    if not repo or not state_sync.github_token():
+        return "Skanı başlatmaq üçün GitHub tokeni lazımdır."
+    try:
+        listed = state_sync._api(f"/repos/{repo}/actions/workflows/job_scanner.yml/runs?per_page=5")
+    except Exception:
+        listed = None
+    for run in (listed or {}).get("workflow_runs") or []:
+        if run.get("status") in ("queued", "in_progress", "waiting", "pending", "requested"):
+            return "Skan artıq gedir. Bitəndə elanlar bura düşəcək."
+    try:
+        state_sync._api(
+            f"/repos/{repo}/actions/workflows/job_scanner.yml/dispatches",
+            "POST",
+            {"ref": "main"},
+        )
+    except Exception as exc:
+        detail = str(exc)
+        if "403" in detail or "401" in detail:
+            return (
+                "Token skanı başlada bilmir. GitHub tokenində Actions icazəsi "
+                "Read and write olmalıdır. Sonra həmin tokeni Render-də GITHUB_TOKEN kimi yenilə."
+            )
+        return f"Skan başlamadı: {detail[:180]}"
+    return "Skan başladı. Uyğun elanlar bitəndə bura gələcək."
+
+
 def _handle_message(message: dict):
     text = (message.get("text") or "").strip()
     chat = str((message.get("chat") or {}).get("id") or "")
-    if not text.startswith("/start"):
+    command = _command(text)
+    if command not in ("/start", "/scan", "/run"):
         return
     if chat_id() and chat != chat_id():
         return
+    if command in ("/scan", "/run"):
+        _reply(chat, _request_scan())
+        return
     if chat_id():
-        reply = f"Bu söhbətə {main.MIN_SCORE}% və yuxarı uyğun elanlar gələcək."
+        reply = (
+            f"Bu söhbətə {main.MIN_SCORE}% və yuxarı uyğun elanlar gələcək.\n"
+            "Skanı başlatmaq üçün /scan yaz."
+        )
     else:
         reply = f"Söhbət ID: {chat}\nBunu .env faylında TELEGRAM_CHAT_ID kimi yazın və proqramı yenidən başladın."
-    try:
-        _api("sendMessage", {"chat_id": chat, "text": reply})
-    except Exception:
-        pass
+    _reply(chat, reply)
 
 
 def handle_update(update: dict):
@@ -405,9 +451,16 @@ def _listen():
             "drop_pending_updates": False,
         })
         print("Telegram webhook qoşuldu.")
-        return
-    _api("deleteWebhook", {"drop_pending_updates": False})
-    threading.Thread(target=_poll_loop, name="telegram-poller", daemon=True).start()
+    else:
+        _api("deleteWebhook", {"drop_pending_updates": False})
+        threading.Thread(target=_poll_loop, name="telegram-poller", daemon=True).start()
+    try:
+        _api("setMyCommands", {"commands": [
+            {"command": "scan", "description": "Vakansiya skanını başlat"},
+        ]})
+    except Exception:
+        pass
+    return
 
 
 def start_poller():
