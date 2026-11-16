@@ -1,3 +1,4 @@
+import base64
 import os
 import re
 import json
@@ -88,16 +89,42 @@ def jobs_for_page() -> tuple[list, str]:
     for job in local:
         if not job.get("id"):
             continue
-        merged[job["id"]] = {**merged.get(job["id"], {}), **job}
-    jobs = list(merged.values())
+        base = merged.get(job["id"], {})
+        combined = {**base, **job}
+        if base.get("cv_ready") and not job.get("cv_ready"):
+            for key in ("cv_ready", "pdf_b64", "pdf_url", "pdf_path", "cover_letter", "email_subject", "status"):
+                if base.get(key):
+                    combined[key] = base[key]
+        merged[job["id"]] = combined
+    jobs = [_materialize_cv(job) for job in merged.values()]
     slug = profiles.active_slug()
     if slug:
         jobs = [job for job in jobs if not job.get("profile_slug") or job.get("profile_slug") == slug]
     jobs.sort(key=lambda job: int(job.get("match_score") or 0), reverse=True)
     if remote and not local:
-        save_state({"jobs": jobs})
+        stored = []
+        for job in jobs:
+            item = dict(job)
+            item.pop("pdf_b64", None)
+            stored.append(item)
+        save_state({"jobs": stored})
         _REMOTE_JOBS["jobs"] = jobs
     return jobs, "" if jobs else note
+
+
+def _materialize_cv(job: dict) -> dict:
+    item = dict(job)
+    encoded = item.pop("pdf_b64", None)
+    if not encoded:
+        return item
+    name = Path(str(item.get("pdf_url") or f"/output/CV_{item.get('id')}.pdf")).name
+    dest = main.OUTPUT_DIR / name
+    if not dest.exists():
+        dest.write_bytes(base64.b64decode(encoded))
+    item["pdf_path"] = str(dest)
+    item["pdf_url"] = f"/output/{dest.name}"
+    item["cv_ready"] = True
+    return item
 
 
 def load_state() -> dict:
@@ -464,7 +491,6 @@ def bulk_select(payload: BulkSelectPayload):
 def _run_cv_worker(single_job_id: str | None):
     TASK_STATE.update({"running": True, "step": "cv", "progress": 5, "logs": [], "cancel": False})
     try:
-        profile = main.analyze_cv("cv.pdf")
         state = load_state()
         jobs = state.get("jobs", [])
 
@@ -494,6 +520,8 @@ def _run_cv_worker(single_job_id: str | None):
                 pct = 10 + int((idx / len(targets)) * 85)
                 TASK_STATE["progress"] = pct
                 log_msg(f"CV hazırlanır ({idx + 1}/{len(targets)}): {j['company']} — {j['title']}")
+                slug = str(j.get("profile_slug") or "")
+                profile = main.analyze_cv("cv.pdf", slug=slug)
 
                 tailored = main.tailor_single_job(profile, j)
                 safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", f"{j['company']}_{j['title']}")[:50]
@@ -519,12 +547,62 @@ def _run_cv_worker(single_job_id: str | None):
         TASK_STATE["running"] = False
 
 
+def _watch_prepared_cvs(job_ids: list[str]):
+    import state_sync
+    deadline = time.monotonic() + 20 * 60
+    last_ready = -1
+    try:
+        while time.monotonic() < deadline and not TASK_STATE["cancel"]:
+            time.sleep(12)
+            remote = state_sync.load()
+            found = [job for job in remote.get("jobs") or [] if job.get("id") in job_ids]
+            ready = [job for job in found if job.get("cv_ready")]
+            if len(ready) != last_ready:
+                last_ready = len(ready)
+                log_msg(f"CV hazırdır: {len(ready)} / {len(job_ids)}")
+            TASK_STATE["progress"] = min(90, 20 + int(70 * len(ready) / max(len(job_ids), 1)))
+            if found and len(ready) >= len(job_ids):
+                _REMOTE_JOBS["at"] = 0.0
+                TASK_STATE["progress"] = 100
+                log_msg("CV və məktub hazırdır.")
+                return
+        log_msg("CV hələ hazır deyil. Bir az sonra səhifəni yenilə.")
+    except Exception as exc:
+        log_msg(f"CV izlənmədi: {exc}")
+    finally:
+        TASK_STATE["running"] = False
+        _REMOTE_JOBS["at"] = 0.0
+
+
 @app.post("/api/step3/generate-cvs")
 def generate_cvs(payload: GenerateCVPayload):
-    if os.getenv("RENDER"):
-        raise HTTPException(status_code=400, detail="CV Telegramdakı Göndər düyməsi ilə hazırlanır.")
     if TASK_STATE["running"]:
         raise HTTPException(status_code=409, detail="Hazırda başqa proses icra olunur.")
+    if os.getenv("RENDER"):
+        jobs, _note = jobs_for_page()
+        targets = [
+            job for job in jobs
+            if (payload.job_id and job.get("id") == payload.job_id)
+            or (not payload.job_id and job.get("selected"))
+        ]
+        if not targets:
+            raise HTTPException(status_code=400, detail="CV üçün vakansiya seçilməyib.")
+        failed = telegram_bot._dispatch_workflow(
+            "prepare_cv.yml",
+            {"job_ids": ",".join(job["id"] for job in targets)},
+        )
+        if failed:
+            raise HTTPException(status_code=400, detail=failed)
+        job_ids = [job["id"] for job in targets]
+        TASK_STATE.update({
+            "running": True,
+            "step": "cv",
+            "progress": 15,
+            "logs": ["CV hazırlanır. Bu, bir neçə dəqiqə çəkə bilər. E-poçt göndərilmir."],
+            "cancel": False,
+        })
+        threading.Thread(target=_watch_prepared_cvs, args=(job_ids,), daemon=True).start()
+        return {"ok": True, "detail": "CV hazırlanır. Bu, bir neçə dəqiqə çəkə bilər."}
     t = threading.Thread(target=_run_cv_worker, args=(payload.job_id,), daemon=True)
     t.start()
     return {"ok": True}

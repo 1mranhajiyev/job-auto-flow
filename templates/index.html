@@ -1081,11 +1081,13 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ job_id: jobId }),
     });
-    if (res.status === 409) {
-      toast("Başqa proses artıq gedir.");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast(typeof data.detail === "string" ? data.detail : "CV hazırlanmadı.");
       return;
     }
-    if (res.ok && !pollTimer) pollTimer = setInterval(pollTask, 1500);
+    if (data.detail) toast(data.detail);
+    if (!pollTimer) pollTimer = setInterval(pollTask, 1500);
   }
 
   function openPdfModal(url, title) {
