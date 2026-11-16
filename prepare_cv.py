@@ -57,6 +57,7 @@ def prepare(job: dict):
         status="CV Hazırdır",
     )
     print(f"CV hazırdır: {job.get('company')} — {job.get('title')}")
+    return pdf_file
 
 
 def main_run():
@@ -70,7 +71,26 @@ def main_run():
     if missing:
         raise SystemExit("Elan tapılmadı: " + ", ".join(missing))
     for job_id in ids:
-        prepare(jobs[job_id])
+        pdf_file = prepare(jobs[job_id])
+        _deliver(jobs[job_id], pdf_file)
+
+
+def _deliver(job: dict, pdf_file):
+    chat = os.getenv("DELIVER_CHAT", "").strip()
+    if not chat:
+        return
+    message_id = os.getenv("DELIVER_MESSAGE", "").strip()
+    message = {"chat": {"id": chat}}
+    if message_id:
+        message["message_id"] = int(message_id)
+    fresh = dict(job)
+    fresh["cv_ready"] = True
+    fresh["cover_letter"] = fresh.get("cover_letter") or ""
+    remote = state_sync.load()
+    current = next((item for item in remote.get("jobs") or [] if item.get("id") == job.get("id")), None)
+    if current:
+        fresh = current
+    telegram_bot.deliver_cv_packet(fresh, pdf_file.read_bytes(), message)
 
 
 def _main():

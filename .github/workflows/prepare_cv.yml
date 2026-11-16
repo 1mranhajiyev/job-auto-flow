@@ -7,6 +7,16 @@ on:
         description: Vakansiya ID-ləri, vergüllə
         required: true
         type: string
+      chat_id:
+        description: Telegram söhbəti. Boşdursa fayl göndərilmir
+        required: false
+        default: ""
+        type: string
+      message_id:
+        description: Telegram mesajı
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -39,6 +49,10 @@ jobs:
       - name: Prepare CV
         env:
           JOB_IDS: ${{ inputs.job_ids }}
+          DELIVER_CHAT: ${{ inputs.chat_id }}
+          DELIVER_MESSAGE: ${{ inputs.message_id }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_MODEL_NAME: ${{ secrets.LLM_MODEL_NAME }}

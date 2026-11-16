@@ -156,7 +156,8 @@ Bot JobFlow adlanır.
 | --- | --- |
 | `/start` | Söhbəti tanıyır |
 | `/scan`, `/run` | Bütün mənbələrlə skan açır |
-| Göndər | CV hazırlayır və məktubu göndərir |
+| Göndər | E-poçt varsa CV hazırlayır və məktubu göndərir |
+| CV hazırla | E-poçt yoxdursa CV faylını və məktub mətnini söhbətə qoyur |
 | Keç | Elanı keçir |
 
 Webhook Render-ə bağlıdır. Lokal proqramı webhook ünvanı boş halda işə salmaq canlı botu özünə götürür.

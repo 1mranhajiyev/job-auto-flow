@@ -1,10 +1,12 @@
 """Telegram bildirişi və telefondan təsdiq.
 
 80% və yuxarı uyğunluqda mesaj gedir. Altındakı düymələr:
-Göndər — CV hazırlayır və e-poçtu göndərir (test rejimində yalnız yoxlayır).
+Göndər — e-poçt varsa CV hazırlayır və məktubu göndərir.
+CV hazırla — e-poçt yoxdursa CV və məktubu söhbətə qoyur.
 Keç — elanı siyahıdan çıxarır.
 """
 
+import base64
 import json
 import os
 import re
@@ -108,7 +110,10 @@ def write_state(state: dict):
 def _job_message(job: dict) -> str:
     email = job.get("hr_email") or "e-poçt yoxdur, əl ilə müraciət"
     posted = job.get("posted_at") or ""
-    mode = "Test rejimi: məktub göndərilmir." if main.DRY_RUN else "Göndər düyməsi müraciəti təsdiqləyir."
+    if (job.get("hr_email") or "").strip():
+        mode = "Test rejimi: məktub göndərilmir." if main.DRY_RUN else "Göndər düyməsi müraciəti təsdiqləyir."
+    else:
+        mode = "E-poçt yoxdur. CV hazırla düyməsi CV və məktubu bu söhbətə qoyur."
     lines = [
         f"<b>{job.get('match_score', 0)}% uyğunluq</b>",
         _html(job.get("company") or "Şirkət"),
@@ -137,10 +142,17 @@ def _job_message(job: dict) -> str:
     return "\n".join(lines)
 
 
-def _keyboard(job_id: str) -> dict:
+def _keyboard(job: dict | None) -> dict:
+    if not job or not job.get("id"):
+        return {"inline_keyboard": []}
+    job_id = job["id"]
+    if (job.get("hr_email") or "").strip():
+        primary = {"text": "Göndər ✅", "callback_data": f"go:{job_id}"}
+    else:
+        primary = {"text": "CV hazırla", "callback_data": f"cv:{job_id}"}
     return {
         "inline_keyboard": [[
-            {"text": "Göndər ✅", "callback_data": f"go:{job_id}"},
+            primary,
             {"text": "Keç ❌", "callback_data": f"skip:{job_id}"},
         ]]
     }
@@ -156,7 +168,7 @@ def notify_job(job: dict) -> bool:
         "text": _job_message(job),
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
-        "reply_markup": _keyboard(job["id"]),
+        "reply_markup": _keyboard(job),
     })
     return True
 
@@ -262,7 +274,7 @@ def _edit(message: dict, text: str, job_id: str | None = None):
         "text": text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
-        "reply_markup": _keyboard(job_id) if job_id else {"inline_keyboard": []},
+        "reply_markup": _keyboard(_find_job(job_id) if job_id else None),
     }
     try:
         _api("editMessageText", payload)
@@ -330,10 +342,110 @@ def _ensure_cv(job: dict) -> dict:
     ) or job
 
 
+def _pdf_bytes(job: dict) -> bytes | None:
+    encoded = job.get("pdf_b64")
+    if encoded:
+        try:
+            return base64.b64decode(encoded)
+        except Exception:
+            return None
+    path = Path(job["pdf_path"]) if job.get("pdf_path") else None
+    if path and path.exists():
+        return path.read_bytes()
+    return None
+
+
+def _send_document(chat: str, filename: str, content: bytes, caption: str):
+    boundary = "----JobFlowBoundary7f3a"
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)[:80] or "CV.pdf"
+    head = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="chat_id"\r\n\r\n{chat}\r\n'
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="caption"\r\n\r\n{caption[:900]}\r\n'
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="document"; filename="{safe_name}"\r\n'
+        f"Content-Type: application/pdf\r\n\r\n"
+    ).encode()
+    body = head + content + f"\r\n--{boundary}--\r\n".encode()
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token()}/sendDocument",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = json.load(response)
+    except Exception as exc:
+        secret = token()
+        detail = str(exc).replace(secret, "***") if secret else str(exc)
+        raise RuntimeError(detail) from None
+    if not payload.get("ok"):
+        raise RuntimeError(payload.get("description") or "PDF göndərilmədi")
+
+
+def deliver_cv_packet(job: dict, pdf: bytes, message: dict | None = None):
+    """CV faylını və məktub mətnini Telegram söhbətinə qoyur. E-poçt göndərmir."""
+    chat = str((message or {}).get("chat", {}).get("id") or chat_id())
+    company = job.get("company") or "Şirkət"
+    title = job.get("title") or "Vakansiya"
+    caption = f"{company} — {title}".replace("\r", " ").replace("\n", " ")
+    _send_document(chat, f"CV_{company}_{title}.pdf", pdf, caption)
+    letter = (job.get("cover_letter") or "").strip()
+    link = (job.get("job_url") or "").strip()
+    text = f"Məktub — {company} — {title}\n\n{letter or 'Məktub mətni tapılmadı.'}"
+    if link:
+        text += f"\n\nElan: {link}"
+    _api("sendMessage", {
+        "chat_id": chat,
+        "text": text[:4000],
+        "disable_web_page_preview": True,
+    })
+    if message and message.get("message_id"):
+        _edit(message, _job_message(job) + "\n\n<b>CV və məktub bu söhbətə göndərildi.</b>", job.get("id"))
+
+
+def _prepare_download(job_id: str, message: dict):
+    job = _find_job(job_id)
+    if not job:
+        _edit(message, "Bu elan siyahıda tapılmadı.")
+        return
+    ready = _pdf_bytes(job)
+    if job.get("cv_ready") and job.get("cover_letter") and ready:
+        deliver_cv_packet(job, ready, message)
+        return
+    if os.getenv("RENDER"):
+        failed = _dispatch_workflow("prepare_cv.yml", {
+            "job_ids": job_id,
+            "chat_id": message["chat"]["id"],
+            "message_id": message["message_id"],
+        })
+        if failed:
+            _edit(message, _job_message(job) + f"\n\n<b>{_html(failed)}</b>", job_id)
+            return
+        _edit(message, _job_message(job) + "\n\nCV və məktub hazırlanır. E-poçt göndərilmir.", job_id)
+        return
+    _edit(message, _job_message(job) + "\n\nCV və məktub hazırlanır...")
+    try:
+        job = _ensure_cv(job)
+    except Exception as exc:
+        failed = _patch_job(job_id, status=f"CV xətası: {str(exc)[:80]}") or job
+        _edit(message, _job_message(failed) + f"\n\n<b>CV hazırlanmadı:</b> {_html(str(exc)[:180])}", job_id)
+        return
+    pdf = _pdf_bytes(job)
+    if not pdf:
+        _edit(message, _job_message(job) + "\n\n<b>PDF tapılmadı.</b>", job_id)
+        return
+    deliver_cv_packet(job, pdf, message)
+
+
 def _approve(job_id: str, message: dict):
     job = _find_job(job_id)
     if not job:
         _edit(message, "Bu elan siyahıda tapılmadı.")
+        return
+    if not (job.get("hr_email") or "").strip():
+        _prepare_download(job_id, message)
         return
     status = str(job.get("status") or "")
     if status.startswith(("Applied", "Dry-Run", "Keçildi", "CV hazırdır")):
@@ -399,7 +511,7 @@ def _handle_callback(query: dict):
         return
     data = str(query.get("data") or "")
     action, _, job_id = data.partition(":")
-    if action not in ("go", "skip") or not job_id:
+    if action not in ("go", "skip", "cv") or not job_id:
         _answer(query.get("id") or "", "Köhnə düymə.")
         return
     if SCAN_BUSY.is_set():
@@ -412,6 +524,8 @@ def _handle_callback(query: dict):
         _answer(query.get("id") or "", "Qəbul olundu.")
         if action == "skip":
             _skip(job_id, message)
+        elif action == "cv":
+            _prepare_download(job_id, message)
         else:
             _approve(job_id, message)
     finally:
