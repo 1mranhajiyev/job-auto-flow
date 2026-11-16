@@ -2,6 +2,12 @@ name: Auto Job Scanner
 
 on:
   workflow_dispatch:
+    inputs:
+      sources:
+        description: Boşdursa bütün mənbələr skan edilir
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -50,4 +56,5 @@ jobs:
           STATE_FERNET_KEY: ${{ secrets.STATE_FERNET_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          SCAN_SOURCES: ${{ inputs.sources }}
         run: python scan_notify.py

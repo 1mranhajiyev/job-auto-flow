@@ -248,6 +248,11 @@
       cursor: pointer;
     }
     .check input { margin-top: 2px; accent-color: var(--ink); }
+    .source-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+      gap: 8px 12px;
+    }
     .hint { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 
     .btn {
@@ -631,10 +636,6 @@
                   <span class="hint">E-poçt göndərilmir, yalnız yoxlanılır.</span>
                 </span>
               </label>
-              <div>
-                <label class="lbl" for="s_sources">Mənbələr</label>
-                <textarea id="s_sources" rows="8" class="field mono" spellcheck="false"></textarea>
-              </div>
             </div>
           </div>
         </div>
@@ -649,8 +650,19 @@
         <div class="page-head">
           <div>
             <h2>Vakansiyalar</h2>
-            <p class="lead">Hər mənbədə CV-yə uyğun axtarış edilir. Yalnız son 30 gündə açılan elanlar saxlanılır. Həddi keçən elan Telegram-a düşür, telefondan göndərmək və ya keçmək olar.</p>
+            <p class="lead">Manual skan yalnız seçilmiş mənbələri açır. Telegram və avtomatik skan hamısını götürür. Yalnız son 30 gündə açılan elanlar saxlanılır.</p>
           </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div class="card-head">
+            <h3>Mənbələr</h3>
+            <label class="check">
+              <input id="sourceAll" type="checkbox" checked onchange="toggleAllSources(this.checked)" />
+              <span>Hamısı</span>
+            </label>
+          </div>
+          <div id="sourceList" class="source-grid"></div>
         </div>
 
         <div class="bar">
@@ -869,7 +881,7 @@
     document.getElementById("s_max_jobs").value = s.max_jobs || 15;
     document.getElementById("s_dry_run").checked = !!s.dry_run;
     document.getElementById("sendDryRun").checked = !!s.dry_run;
-    document.getElementById("s_sources").value = appState.sources_text || "";
+    renderSources();
 
     const badge = document.getElementById("modeBadge");
     if (s.dry_run) {
@@ -893,7 +905,6 @@
 
     const payload = {
       profile: p,
-      sources_text: document.getElementById("s_sources").value,
       min_score: parseInt(document.getElementById("s_min_score").value || "80", 10),
       max_jobs: parseInt(document.getElementById("s_max_jobs").value || "15", 10),
       dry_run: document.getElementById("s_dry_run").checked,
@@ -941,18 +952,96 @@
     toast("Profil yeniləndi.");
   }
 
+  function sourceName(url) {
+    const names = {
+      "jobs.glorri.az": "Glorri",
+      "www.hellojob.az": "HelloJob",
+      "smartjob.az": "SmartJob",
+      "busy.az": "Busy.az",
+      "ejob.az": "eJob",
+      "jobsearch.az": "JobSearch",
+      "www.work.az": "Work.az",
+      "boss.az": "Boss.az",
+      "hrin.az": "HRIN",
+      "azerweb.az": "Azerweb",
+      "azvak.az": "Azvak",
+      "humanpro.az": "HumanPro",
+    };
+    try {
+      return names[new URL(url).hostname] || new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      return url;
+    }
+  }
+
+  function catalogSources() {
+    return (appState.sources_text || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"));
+  }
+
+  function renderSources() {
+    const box = document.getElementById("sourceList");
+    if (!box) return;
+    const urls = catalogSources();
+    const known = new Set([...box.querySelectorAll("input[data-source]")].map((el) => el.dataset.source));
+    const same = known.size === urls.length && urls.every((url) => known.has(url));
+    if (same && known.size) return;
+    const previous = new Set([...box.querySelectorAll("input[data-source]:checked")].map((el) => el.dataset.source));
+    const first = known.size === 0;
+    box.replaceChildren();
+    for (const url of urls) {
+      const label = document.createElement("label");
+      label.className = "check";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.dataset.source = url;
+      input.checked = first || previous.has(url);
+      input.addEventListener("change", syncSourceAll);
+      const text = document.createElement("span");
+      text.textContent = sourceName(url);
+      label.append(input, text);
+      box.appendChild(label);
+    }
+    syncSourceAll();
+  }
+
+  function syncSourceAll() {
+    const boxes = [...document.querySelectorAll("#sourceList input[data-source]")];
+    const all = document.getElementById("sourceAll");
+    if (all) all.checked = boxes.length > 0 && boxes.every((box) => box.checked);
+  }
+
+  function toggleAllSources(checked) {
+    document.querySelectorAll("#sourceList input[data-source]").forEach((box) => {
+      box.checked = checked;
+    });
+  }
+
+  function selectedSources() {
+    return [...document.querySelectorAll("#sourceList input[data-source]:checked")].map((box) => box.dataset.source);
+  }
+
   async function startScan() {
+    const sources = selectedSources();
+    if (!sources.length) {
+      toast("Ən azı bir mənbə seç.");
+      return;
+    }
     const rescan = document.getElementById("rescanCheck").checked;
     const res = await fetch("/api/step2/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rescan_existing: rescan }),
+      body: JSON.stringify({ rescan_existing: rescan, sources }),
     });
-    if (res.status === 409) {
-      toast("Başqa proses artıq gedir.");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast(typeof data.detail === "string" ? data.detail : "Skan başlamadı.");
       return;
     }
-    if (res.ok && !pollTimer) pollTimer = setInterval(pollTask, 1500);
+    if (data.detail) toast(data.detail);
+    if (!data.detail && !pollTimer) pollTimer = setInterval(pollTask, 1500);
   }
 
   async function cancelTask() {

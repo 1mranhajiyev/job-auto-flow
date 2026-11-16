@@ -93,7 +93,7 @@ def update_env_var(key: str, value: str):
 # ---------------------------------------------------------
 class ProfileSettingsPayload(BaseModel):
     profile: dict
-    sources_text: str
+    sources_text: str = ""
     min_score: int
     max_jobs: int
     dry_run: bool
@@ -101,6 +101,7 @@ class ProfileSettingsPayload(BaseModel):
 
 class ScanPayload(BaseModel):
     rescan_existing: bool = False
+    sources: list[str] | None = None
 
 
 class JobUpdatePayload(BaseModel):
@@ -176,7 +177,6 @@ def save_profile_and_settings(payload: ProfileSettingsPayload):
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(payload.profile, ensure_ascii=False, indent=2), encoding="utf-8")
     profiles.publish()
-    SOURCES_FILE.write_text(payload.sources_text.strip() + "\n", encoding="utf-8")
 
     main.MIN_SCORE = int(payload.min_score)
     main.MAX_JOBS = int(payload.max_jobs)
@@ -248,7 +248,26 @@ def cancel_task():
 # ---------------------------------------------------------
 # ADDIM 2: VAKANSİYA SKANI VƏ QİYMƏTLƏNDİRMƏ
 # ---------------------------------------------------------
-def _run_scan_worker(rescan_existing: bool):
+def catalog_sources() -> list[str]:
+    if not SOURCES_FILE.exists():
+        return []
+    return [
+        line.strip()
+        for line in SOURCES_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+def selected_sources(requested: list[str] | None) -> list[str]:
+    """Seçim gəlməyəndə bütün mənbələr qalır. Siyahı gələndə yalnız siyahıdakılar qalır."""
+    catalog = catalog_sources()
+    if requested is None:
+        return catalog
+    allowed = set(catalog)
+    return [url for url in requested if url in allowed]
+
+
+def _run_scan_worker(rescan_existing: bool, sources: list[str] | None = None):
     TASK_STATE.update({"running": True, "step": "scan", "progress": 5, "logs": [], "cancel": False})
     telegram_bot.SCAN_BUSY.set()
     try:
@@ -256,11 +275,8 @@ def _run_scan_worker(rescan_existing: bool):
         wb, ws = main.init_excel()
         skip_urls = set() if rescan_existing else main.get_existing_urls(ws)
 
-        urls = [
-            line.strip()
-            for line in SOURCES_FILE.read_text(encoding="utf-8").splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
+        urls = selected_sources(sources)
+        log_msg(f"Mənbə: {len(urls)}")
 
         raw_jobs = []
         seen_urls = set(skip_urls)
@@ -349,11 +365,15 @@ def _run_scan_worker(rescan_existing: bool):
 
 @app.post("/api/step2/scan")
 def start_scan(payload: ScanPayload):
+    picked = selected_sources(payload.sources)
+    if payload.sources is not None and not picked:
+        raise HTTPException(status_code=400, detail="Ən azı bir mənbə seç.")
     if os.getenv("RENDER"):
-        return {"ok": True, "detail": telegram_bot._request_scan()}
+        manual = payload.sources is not None
+        return {"ok": True, "detail": telegram_bot._request_scan(picked if manual else None)}
     if TASK_STATE["running"]:
         raise HTTPException(status_code=409, detail="Hazırda başqa proses icra olunur.")
-    t = threading.Thread(target=_run_scan_worker, args=(payload.rescan_existing,), daemon=True)
+    t = threading.Thread(target=_run_scan_worker, args=(payload.rescan_existing, picked), daemon=True)
     t.start()
     return {"ok": True}
 

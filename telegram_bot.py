@@ -423,7 +423,7 @@ def _dispatch_workflow(workflow: str, inputs: dict | None = None) -> str | None:
     return None
 
 
-def _request_scan() -> str:
+def _request_scan(sources: list[str] | None = None) -> str:
     import state_sync
 
     repo = (os.getenv("GITHUB_REPOSITORY") or "").strip()
@@ -436,7 +436,8 @@ def _request_scan() -> str:
     for run in (listed or {}).get("workflow_runs") or []:
         if run.get("status") in ("queued", "in_progress", "waiting", "pending", "requested"):
             return "Skan artıq gedir. Bitəndə elanlar bura düşəcək."
-    failed = _dispatch_workflow("job_scanner.yml")
+    inputs = {"sources": "\n".join(sources)} if sources else None
+    failed = _dispatch_workflow("job_scanner.yml", inputs)
     if failed:
         return failed.replace("Başlamadı", "Skan başlamadı").replace("Bunu başlatmaq", "Skanı başlatmaq")
     return "Skan başladı. Uyğun elanlar bitəndə bura gələcək."

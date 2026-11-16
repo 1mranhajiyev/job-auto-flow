@@ -19,11 +19,20 @@ def _sources() -> list[str]:
     path = Path("sources.txt")
     if not path.exists():
         raise SystemExit("sources.txt tapılmadı.")
-    return [
+    catalog = [
         line.strip()
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
+    chosen = os.getenv("SCAN_SOURCES", "").strip()
+    if not chosen:
+        return catalog
+    wanted = {part.strip() for part in chosen.replace(",", "\n").splitlines() if part.strip()}
+    selected = [url for url in catalog if url in wanted]
+    if not selected:
+        raise SystemExit("Seçilmiş mənbə tapılmadı.")
+    print(f"Manual mənbə: {len(selected)} / {len(catalog)}")
+    return selected
 
 
 def _browser_kwargs() -> dict:
