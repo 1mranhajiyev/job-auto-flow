@@ -770,6 +770,101 @@ LİNKLƏR:
 LOOSE_SEARCH_HOSTS = ("humanpro.az", "work.az", "azvak.az", "ejob.az")
 
 
+def extract_salary(text: str) -> str:
+    """Elanın öz mətnində yazılmış maaşı qaytarır. Sayt menyusundakı «Maaş» sözünü götürmür."""
+    lead = vacancy_lead(text)
+    pattern = re.compile(
+        r"(?:əmək\s*haqq[ıi]|emek\s*haqq[ıi]|maaş|maas|salary)\s*[:\-–—]?\s*([^\n|]{1,90})",
+        re.I,
+    )
+    found = []
+    for match in pattern.finditer(lead):
+        value = re.sub(r"\s+", " ", match.group(1)).strip(" .-|")
+        value = re.split(r"\s+\(|\s{2,}", value, maxsplit=1)[0].strip(" .")
+        folded = fold_text(value)
+        if not value or "kalkulyator" in folded:
+            continue
+        if salary_signature(value) == () and "razi" not in folded:
+            continue
+        if not re.search(r"\d", value) and "razi" not in folded:
+            continue
+        value = re.sub(r"\s+araligindadir\.?$", "", value, flags=re.I)
+        found.append(value[:70])
+    if not found:
+        return ""
+
+    def rank(value: str):
+        folded = fold_text(value)
+        return (int("azn" in folded or "₼" in value or "razi" in folded), len(value))
+
+    return sorted(found, key=rank)[-1]
+
+
+def salary_signature(value: str) -> tuple[str, ...]:
+    """Rəqəmsal maaşı müqayisə üçün saxlayır. Razılaşma və boş dəyər eyni elanı ayırmır."""
+    folded = fold_text(value or "")
+    if not folded or "razi" in folded:
+        return ()
+    nums = tuple(re.findall(r"\d+", folded))
+    if nums in {("0", "500"), ("0",)}:
+        return ()
+    return nums
+
+
+def vacancy_identity(job: dict) -> tuple | None:
+    company = fold_text(re.sub(r"\s+", " ", job.get("company") or "")).strip()
+    title = fold_text(re.sub(r"\s+", " ", job.get("title") or "")).strip()
+    if not title or company in ("", "unknown", "namelum"):
+        return None
+    return (company, title, salary_signature(job.get("salary") or ""))
+
+
+def same_vacancy(left: dict, right: dict) -> bool:
+    key = vacancy_identity(left)
+    return bool(key) and key == vacancy_identity(right)
+
+
+def _absorb_vacancy(base: dict, extra: dict):
+    urls = []
+    for url in (base.get("job_urls") or [base.get("job_url")]) + (extra.get("job_urls") or [extra.get("job_url")]):
+        clean = (url or "").rstrip("/")
+        if clean and clean not in urls:
+            urls.append(clean)
+    base["job_urls"] = urls
+    if urls:
+        base["job_url"] = urls[0]
+    if len(extra.get("raw_text") or "") > len(base.get("raw_text") or ""):
+        base["raw_text"] = extra["raw_text"]
+    if len(salary_signature(extra.get("salary") or "")) > len(salary_signature(base.get("salary") or "")):
+        base["salary"] = extra["salary"]
+    if not base.get("found_emails") and extra.get("found_emails"):
+        base["found_emails"] = extra["found_emails"]
+    if not base.get("posted_at") and extra.get("posted_at"):
+        base["posted_at"] = extra["posted_at"]
+
+
+def merge_same_vacancies(jobs: list[dict]) -> list[dict]:
+    """Şirkət, vəzifə və maaş eyni olan elanları birləşdirir. Linklər job_urls-da qalır."""
+    merged = []
+    for job in jobs:
+        item = dict(job)
+        item["salary"] = item.get("salary") or extract_salary(item.get("raw_text") or "")
+        item["job_urls"] = [
+            (url or "").rstrip("/")
+            for url in (item.get("job_urls") or [item.get("job_url")])
+            if url
+        ]
+        placed = False
+        for base in merged:
+            if same_vacancy(base, item):
+                _absorb_vacancy(base, item)
+                placed = True
+                break
+        if not placed:
+            merged.append(item)
+    return merged
+
+
 def vacancy_lead(text: str) -> str:
     """Oxşar elanlar blokundan əvvəlki hissə. Oradakı köhnə tarixlər bu elana aid deyil."""
     return re.split(
@@ -1047,7 +1142,10 @@ def collect_source_jobs(page, profile: dict, source_urls: list[str], skip_urls: 
                 "posted_at": format_az_date(opened),
             })
         log(f"  -> {kept_here} son {MAX_VACANCY_AGE_DAYS} günün elanı saxlanıldı")
-    return collected
+    merged = merge_same_vacancies(collected)
+    if len(merged) != len(collected):
+        log(f"Eyni elanlar birləşdirildi: {len(collected)} → {len(merged)}")
+    return merged
 
 
 def scrape_sources(browser, profile: dict, sources_file: str = "sources.txt", skip_urls: set = None) -> list[dict]:

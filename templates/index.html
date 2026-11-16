@@ -1064,7 +1064,8 @@
         <td>
           <div class="company">${esc(j.company)}</div>
           <a class="job-link" href="${esc(j.job_url)}" target="_blank" rel="noopener">${esc(j.title)}</a>
-          <div class="job-meta">${esc([hostOf(j.source), j.posted_at].filter(Boolean).join(" · "))}</div>
+          <div class="job-meta">${esc([hostOf(j.source), j.posted_at, j.salary].filter(Boolean).join(" · "))}</div>
+          ${(j.job_urls || []).length > 1 ? `<div class="job-meta">${j.job_urls.map((url) => `<a class="job-link" href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`).join(", ")}</div>` : ""}
         </td>
         <td class="mail">
           <input type="email" value="${esc(j.hr_email || "")}" placeholder="E-poçt yoxdur"

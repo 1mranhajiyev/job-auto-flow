@@ -87,11 +87,25 @@ def _job_message(job: dict) -> str:
         _html(job.get("company") or "Şirkət"),
         _html(job.get("title") or "Vakansiya"),
     ]
+    if job.get("salary"):
+        lines.append(_html(job["salary"]))
     if posted:
         lines.append(_html(posted))
     lines.append(_html(email))
-    href = _html(job.get("job_url") or "").replace('"', "&quot;")
-    lines.append(f'<a href="{href}">Elanı aç</a>')
+    urls = []
+    for url in job.get("job_urls") or [job.get("job_url") or ""]:
+        clean = (url or "").strip()
+        if clean and clean not in urls:
+            urls.append(clean)
+    if len(urls) <= 1:
+        href = _html(urls[0] if urls else "").replace('"', "&quot;")
+        lines.append(f'<a href="{href}">Elanı aç</a>')
+    else:
+        links = []
+        for url in urls:
+            href = _html(url).replace('"', "&quot;")
+            links.append(f'<a href="{href}">{_html(url)}</a>')
+        lines.append(", ".join(links))
     lines.append(mode)
     return "\n".join(lines)
 

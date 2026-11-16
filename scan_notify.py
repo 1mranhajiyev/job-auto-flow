@@ -67,6 +67,8 @@ def _build_jobs(raw_jobs: list[dict], scores: dict, browser) -> list[dict]:
             "email_subject": "",
             "cover_letter": "",
             "posted_at": job.get("posted_at", ""),
+            "salary": job.get("salary") or "",
+            "job_urls": job.get("job_urls") or [job["job_url"]],
             "status": "Uyğundur (Seçilib)" if score >= main.MIN_SCORE else f"Aşağı bal (<{main.MIN_SCORE}%)",
         })
     final_jobs.sort(key=lambda item: item["match_score"], reverse=True)
@@ -101,11 +103,17 @@ def run():
 
     sent = 0
     for job in fresh:
-        url = (job.get("job_url") or "").rstrip("/")
-        if not url or url in seen:
+        urls = [str(url).rstrip("/") for url in (job.get("job_urls") or [job.get("job_url")]) if url]
+        if not urls:
+            continue
+        previous = next((item for item in pending if main.same_vacancy(item, job)), None)
+        if previous or any(url in seen for url in urls):
+            if previous:
+                main._absorb_vacancy(previous, job)
+            seen.update(urls)
             continue
         if int(job.get("match_score") or 0) < main.MIN_SCORE:
-            seen.add(url)
+            seen.update(urls)
             continue
         try:
             delivered = telegram_bot.notify_job(job)
@@ -116,7 +124,7 @@ def run():
             print(f"Bildiriş getmədi, növbəti skanda yenidən cəhd ediləcək: {job.get('title', '')[:60]}")
             continue
         pending.append(job)
-        seen.add(url)
+        seen.update(urls)
         sent += 1
         state_sync.save({"seen_urls": sorted(seen), "jobs": pending})
 

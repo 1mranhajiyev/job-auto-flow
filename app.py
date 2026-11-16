@@ -278,6 +278,8 @@ def _run_scan_worker(rescan_existing: bool):
                     "email_subject": "",
                     "cover_letter": "",
                     "posted_at": j.get("posted_at", ""),
+                    "salary": j.get("salary") or "",
+                    "job_urls": j.get("job_urls") or [j["job_url"]],
                     "status": "Uyğundur (Seçilib)" if score >= main.MIN_SCORE else f"Aşağı bal (<{main.MIN_SCORE}%)",
                 })
 
