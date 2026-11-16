@@ -10,6 +10,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 import main
+import profiles
 import state_sync
 import telegram_bot
 
@@ -69,6 +70,7 @@ def _build_jobs(raw_jobs: list[dict], scores: dict, browser) -> list[dict]:
             "posted_at": job.get("posted_at", ""),
             "salary": job.get("salary") or "",
             "job_urls": job.get("job_urls") or [job["job_url"]],
+            "profile_slug": profiles.active_slug(),
             "status": "Uyğundur (Seçilib)" if score >= main.MIN_SCORE else f"Aşağı bal (<{main.MIN_SCORE}%)",
         })
     final_jobs.sort(key=lambda item: item["match_score"], reverse=True)
@@ -76,8 +78,9 @@ def _build_jobs(raw_jobs: list[dict], scores: dict, browser) -> list[dict]:
 
 
 def run():
-    if not Path("profile.json").exists() and not Path("cv.pdf").exists():
-        raise SystemExit("profile.json və ya cv.pdf lazımdır.")
+    profiles.restore()
+    if not profiles.profile_file().exists() and not profiles.cv_file().exists():
+        raise SystemExit("Profil və ya CV tapılmadı.")
     if not state_sync.enabled():
         raise SystemExit("STATE_FERNET_KEY, GITHUB_REPOSITORY və GitHub tokeni lazımdır.")
 

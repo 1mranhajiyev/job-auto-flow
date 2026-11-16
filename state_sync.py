@@ -123,6 +123,13 @@ def save(state: dict):
     if not enabled():
         raise RuntimeError("Şifrəli vəziyyət bağlıdır: STATE_FERNET_KEY və ya GitHub tokeni yoxdur.")
     slim = _slim(state)
+    if "library" not in slim:
+        try:
+            current = load()
+        except Exception:
+            current = {}
+        if current.get("library"):
+            slim["library"] = current["library"]
     token = _fernet().encrypt(json.dumps(slim, ensure_ascii=False).encode()).decode()
     content = base64.b64encode(token.encode()).decode()
     with LOCK:
@@ -158,10 +165,13 @@ def _slim(state: dict) -> dict:
             item = dict(job)
             item.pop("_store", None)
             jobs.append(item)
-    return {
+    result = {
         "seen_urls": sorted({str(url).rstrip("/") for url in (state.get("seen_urls") or []) if url}),
         "jobs": jobs,
     }
+    if state.get("library"):
+        result["library"] = state["library"]
+    return result
 
 
 def patch_job(job_id: str, **fields) -> dict | None:

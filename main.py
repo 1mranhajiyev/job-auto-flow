@@ -129,11 +129,12 @@ def extract_pdf_links(reader: PdfReader) -> list[str]:
     return list(dict.fromkeys(uris))
 
 
-def analyze_cv(pdf_path: str = "cv.pdf") -> dict:
-    if PROFILE_CACHE.exists():
-        print("[1/4] Mövcud profile.json istifadə olunur...")
-        return json.loads(PROFILE_CACHE.read_text(encoding="utf-8"))
+def _profile_cache() -> Path:
+    import profiles
+    return profiles.profile_file()
 
+
+def parse_cv_pdf(pdf_path: str) -> dict:
     print(f"[1/4] {pdf_path} analiz edilir...")
     reader = PdfReader(pdf_path)
     cv_text = "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -173,8 +174,23 @@ PDF HİPERLİNKLƏR:
 CV MƏTNİ:
 {cv_text}
 """
-    profile = clean_json(ask_llm(sys_p, usr_p))
-    PROFILE_CACHE.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
+    return clean_json(ask_llm(sys_p, usr_p))
+
+
+def analyze_cv(pdf_path: str = "cv.pdf", force: bool = False, slug: str = "") -> dict:
+    import profiles
+    cache = profiles.profile_file(slug) if slug else _profile_cache()
+    if cache.exists() and not force:
+        print(f"[1/4] Mövcud {cache.name} istifadə olunur...")
+        return json.loads(cache.read_text(encoding="utf-8"))
+    source = Path(pdf_path)
+    if not source.exists():
+        fallback = profiles.cv_file(slug)
+        if fallback.exists():
+            source = fallback
+    profile = parse_cv_pdf(str(source))
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
     return profile
 
 

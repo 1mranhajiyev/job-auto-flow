@@ -14,10 +14,15 @@ from playwright.sync_api import sync_playwright
 import openpyxl
 
 import main
+import profiles
 import telegram_bot
 
 @asynccontextmanager
 async def _lifespan(_app):
+    try:
+        profiles.restore()
+    except Exception as exc:
+        print(f"Profillər açılmadı: {exc}")
     telegram_bot.start_poller()
     yield
 
@@ -51,18 +56,21 @@ def log_msg(msg: str):
 
 
 def load_state() -> dict:
+    path = profiles.state_file()
     with telegram_bot.STATE_LOCK:
-        if STATE_FILE.exists():
+        if path.exists():
             try:
-                return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                return json.loads(path.read_text(encoding="utf-8"))
             except Exception:
                 pass
         return {"jobs": []}
 
 
 def save_state(state: dict):
+    path = profiles.state_file()
     with telegram_bot.STATE_LOCK:
-        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def update_env_var(key: str, value: str):
@@ -111,6 +119,10 @@ class GenerateCVPayload(BaseModel):
     job_id: str | None = None  # None olarsa seçilmiş bütün vakansiyalar üçün yaradır
 
 
+class ActivatePayload(BaseModel):
+    slug: str
+
+
 class SendPayload(BaseModel):
     dry_run: bool
 
@@ -129,16 +141,20 @@ def index():
 @app.get("/api/state")
 def get_state():
     profile = {}
-    if main.PROFILE_CACHE.exists():
-        profile = json.loads(main.PROFILE_CACHE.read_text(encoding="utf-8"))
-    elif Path("cv.pdf").exists():
-        profile = main.analyze_cv("cv.pdf")
+    cache = profiles.profile_file()
+    cv = profiles.cv_file()
+    if cache.exists():
+        profile = json.loads(cache.read_text(encoding="utf-8"))
+    elif cv.exists():
+        profile = main.analyze_cv(str(cv))
 
     sources_text = SOURCES_FILE.read_text(encoding="utf-8") if SOURCES_FILE.exists() else ""
     state = load_state()
 
     return {
         "profile": profile,
+        "profiles": profiles.list_profiles(),
+        "active_profile": profiles.active_slug(),
         "sources_text": sources_text,
         "settings": {
             "min_score": main.MIN_SCORE,
@@ -152,9 +168,14 @@ def get_state():
 
 @app.post("/api/profile/save")
 def save_profile_and_settings(payload: ProfileSettingsPayload):
-    main.PROFILE_CACHE.write_text(
-        json.dumps(payload.profile, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    slug = profiles.active_slug() or profiles.slug_from_name(payload.profile.get("full_name") or "")
+    if slug and not profiles.active_slug():
+        profiles.set_active(slug)
+        profiles.ensure_state(slug)
+    dest = profiles.DIR / f"profile_{slug}.json" if slug else main.PROFILE_CACHE
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(payload.profile, ensure_ascii=False, indent=2), encoding="utf-8")
+    profiles.publish()
     SOURCES_FILE.write_text(payload.sources_text.strip() + "\n", encoding="utf-8")
 
     main.MIN_SCORE = int(payload.min_score)
@@ -169,23 +190,50 @@ def save_profile_and_settings(payload: ProfileSettingsPayload):
 
 @app.post("/api/profile/upload-cv")
 async def upload_cv(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".pdf"):
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Yalnız PDF faylı qəbul olunur.")
     content = await file.read()
-    Path("cv.pdf").write_bytes(content)
-    if main.PROFILE_CACHE.exists():
-        main.PROFILE_CACHE.unlink()
-    profile = main.analyze_cv("cv.pdf")
-    return {"ok": True, "profile": profile}
+    profiles.DIR.mkdir(exist_ok=True)
+    incoming = profiles.DIR / "_incoming.pdf"
+    incoming.write_bytes(content)
+    try:
+        profile = main.parse_cv_pdf(str(incoming))
+    finally:
+        incoming.unlink(missing_ok=True)
+    slug = profiles.slug_from_name(profile.get("full_name") or "")
+    created = not (profiles.DIR / f"profile_{slug}.json").exists()
+    (profiles.DIR / f"cv_{slug}.pdf").write_bytes(content)
+    (profiles.DIR / f"profile_{slug}.json").write_text(
+        json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    profiles.ensure_state(slug)
+    profiles.set_active(slug)
+    profiles.publish()
+    return {"ok": True, "profile": profile, "slug": slug, "created": created}
+
+
+@app.post("/api/profile/activate")
+def activate_profile(payload: ActivatePayload):
+    slug = payload.slug.strip()
+    if not re.fullmatch(r"[\w\-]{1,80}", slug):
+        raise HTTPException(status_code=400, detail="Profil adı yanlışdır.")
+    if not (profiles.DIR / f"profile_{slug}.json").exists():
+        raise HTTPException(status_code=404, detail="Profil tapılmadı.")
+    profiles.set_active(slug)
+    profiles.publish()
+    return get_state()
 
 
 @app.post("/api/profile/reparse")
 def reparse_cv():
-    if not Path("cv.pdf").exists():
-        raise HTTPException(status_code=404, detail="cv.pdf tapılmadı.")
-    if main.PROFILE_CACHE.exists():
-        main.PROFILE_CACHE.unlink()
-    profile = main.analyze_cv("cv.pdf")
+    cv = profiles.cv_file()
+    if not cv.exists():
+        raise HTTPException(status_code=404, detail="CV tapılmadı.")
+    profile = main.parse_cv_pdf(str(cv))
+    dest = profiles.profile_file()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
+    profiles.publish()
     return {"ok": True, "profile": profile}
 
 
@@ -280,6 +328,7 @@ def _run_scan_worker(rescan_existing: bool):
                     "posted_at": j.get("posted_at", ""),
                     "salary": j.get("salary") or "",
                     "job_urls": j.get("job_urls") or [j["job_url"]],
+                    "profile_slug": profiles.active_slug(),
                     "status": "Uyğundur (Seçilib)" if score >= main.MIN_SCORE else f"Aşağı bal (<{main.MIN_SCORE}%)",
                 })
 

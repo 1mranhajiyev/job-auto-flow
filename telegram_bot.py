@@ -63,19 +63,27 @@ def _html(value: str) -> str:
     )
 
 
+def _state_path() -> Path:
+    import profiles
+    return profiles.state_file()
+
+
 def read_state() -> dict:
+    path = _state_path()
     with STATE_LOCK:
-        if not STATE_FILE.exists():
+        if not path.exists():
             return {"jobs": []}
         try:
-            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return {"jobs": []}
 
 
 def write_state(state: dict):
+    path = _state_path()
     with STATE_LOCK:
-        STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _job_message(job: dict) -> str:
@@ -177,11 +185,12 @@ def _find_job(job_id: str) -> dict | None:
 
 
 def _patch_local(job_id: str, **fields) -> dict | None:
+    path = _state_path()
     with STATE_LOCK:
-        if not STATE_FILE.exists():
+        if not path.exists():
             return None
         try:
-            state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            state = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return None
         found = None
@@ -191,7 +200,7 @@ def _patch_local(job_id: str, **fields) -> dict | None:
                 found = job
                 break
         if found:
-            STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+            path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
         return found
 
 
@@ -259,7 +268,10 @@ def _ensure_cv(job: dict) -> dict:
     pdf = Path(job["pdf_path"]) if job.get("pdf_path") else None
     if job.get("cv_ready") and pdf and pdf.exists() and job.get("cover_letter"):
         return job
-    profile = main.analyze_cv("cv.pdf")
+    slug = str(job.get("profile_slug") or "")
+    import profiles
+    pdf = profiles.cv_file(slug)
+    profile = main.analyze_cv(str(pdf if pdf.exists() else "cv.pdf"), slug=slug)
     from playwright.sync_api import sync_playwright
 
     tailored = main.tailor_single_job(profile, job)

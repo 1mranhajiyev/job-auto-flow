@@ -5,10 +5,12 @@ Bu iş GitHub-un serverində gedir. Render-in pulsuz planında brauzer yaddaşa 
 
 import os
 
+import profiles
 import telegram_bot
 
 
 def main():
+    profiles.restore()
     message = {
         "chat": {"id": os.environ["CHAT_ID"]},
         "message_id": int(os.environ["MESSAGE_ID"]),

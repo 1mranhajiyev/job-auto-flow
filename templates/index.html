@@ -237,6 +237,7 @@
       overflow: auto;
     }
     textarea.field { resize: vertical; min-height: 72px; }
+    select.field { font: inherit; color: inherit; }
     .field.is-set { border-color: #b7d7c6; color: var(--good); }
 
     .check {
@@ -577,6 +578,12 @@
                 <button type="button" onclick="reparseCV()" class="btn ghost sm">Yenidən oxu</button>
               </div>
             </div>
+            <div class="stack" style="margin-bottom: 14px;">
+              <div>
+                <label class="lbl" for="profilePick">Aktiv profil</label>
+                <select id="profilePick" class="field" onchange="switchProfile(this.value)"></select>
+              </div>
+            </div>
             <div class="grid-2">
               <div>
                 <label class="lbl" for="p_full_name">Ad və soyad</label>
@@ -855,6 +862,23 @@
   }
 
   function populateStep1() {
+    const pick = document.getElementById("profilePick");
+    const people = appState.profiles || [];
+    pick.replaceChildren();
+    if (!people.length) {
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "Profil yoxdur";
+      pick.appendChild(empty);
+    }
+    for (const person of people) {
+      const option = document.createElement("option");
+      option.value = person.slug;
+      option.textContent = person.full_name;
+      pick.appendChild(option);
+    }
+    pick.value = appState.active_profile || (people[0] && people[0].slug) || "";
+
     const p = appState.profile || {};
     document.getElementById("p_full_name").value = p.full_name || "";
     document.getElementById("p_headline").value = p.headline || "";
@@ -925,8 +949,24 @@
       toast("Yalnız PDF qəbul olunur.");
       return;
     }
+    const data = await res.json();
     await fetchState();
-    toast("Profil yeniləndi.");
+    toast(data.created ? "Yeni profil yarandı. Köhnəsi qaldı." : "Bu profilin CV-si yeniləndi. Digər profillər qaldı.");
+  }
+
+  async function switchProfile(slug) {
+    if (!slug || slug === appState.active_profile) return;
+    const res = await fetch("/api/profile/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug }),
+    });
+    if (!res.ok) {
+      toast("Profil açılmadı.");
+      return;
+    }
+    await fetchState();
+    toast("Profil dəyişdi.");
   }
 
   async function reparseCV() {
