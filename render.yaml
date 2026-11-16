@@ -3,7 +3,7 @@ services:
     name: job-auto-flow
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt && python -m playwright install chromium
+    buildCommand: pip install -r requirements.txt
     startCommand: python app.py
     envVars:
       - key: PYTHON_VERSION

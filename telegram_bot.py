@@ -297,6 +297,17 @@ def _approve(job_id: str, message: dict):
     if status.startswith(("Applied", "Dry-Run", "Keçildi", "CV hazırdır")):
         _edit(message, _job_message(job) + f"\n\n<b>{_html(status)}</b>")
         return
+    if os.getenv("RENDER"):
+        failed = _dispatch_workflow("apply_job.yml", {
+            "job_id": job_id,
+            "chat_id": message["chat"]["id"],
+            "message_id": message["message_id"],
+        })
+        if failed:
+            _edit(message, _job_message(job) + f"\n\n<b>{_html(failed)}</b>", job_id)
+            return
+        _edit(message, _job_message(job) + "\n\nCV hazırlanır. Bu, bir neçə dəqiqə çəkə bilər.")
+        return
     _edit(message, _job_message(job) + "\n\nCV hazırlanır...")
     try:
         job = _ensure_cv(job)
@@ -377,6 +388,29 @@ def _reply(chat: str, text: str):
         pass
 
 
+def _dispatch_workflow(workflow: str, inputs: dict | None = None) -> str | None:
+    """Uğurda None, əks halda Telegramda göstəriləcək xəta mətnini qaytarır."""
+    import state_sync
+
+    repo = (os.getenv("GITHUB_REPOSITORY") or "").strip()
+    if not repo or not state_sync.github_token():
+        return "Bunu başlatmaq üçün GitHub tokeni lazımdır."
+    payload = {"ref": "main"}
+    if inputs:
+        payload["inputs"] = {key: str(value) for key, value in inputs.items()}
+    try:
+        state_sync._api(f"/repos/{repo}/actions/workflows/{workflow}/dispatches", "POST", payload)
+    except Exception as exc:
+        detail = str(exc)
+        if "403" in detail or "401" in detail:
+            return (
+                "Token bu işi başlada bilmir. GitHub tokenində Actions icazəsi "
+                "Read and write olmalıdır. Sonra həmin tokeni Render-də GITHUB_TOKEN kimi yenilə."
+            )
+        return f"Başlamadı: {detail[:180]}"
+    return None
+
+
 def _request_scan() -> str:
     import state_sync
 
@@ -390,20 +424,9 @@ def _request_scan() -> str:
     for run in (listed or {}).get("workflow_runs") or []:
         if run.get("status") in ("queued", "in_progress", "waiting", "pending", "requested"):
             return "Skan artıq gedir. Bitəndə elanlar bura düşəcək."
-    try:
-        state_sync._api(
-            f"/repos/{repo}/actions/workflows/job_scanner.yml/dispatches",
-            "POST",
-            {"ref": "main"},
-        )
-    except Exception as exc:
-        detail = str(exc)
-        if "403" in detail or "401" in detail:
-            return (
-                "Token skanı başlada bilmir. GitHub tokenində Actions icazəsi "
-                "Read and write olmalıdır. Sonra həmin tokeni Render-də GITHUB_TOKEN kimi yenilə."
-            )
-        return f"Skan başlamadı: {detail[:180]}"
+    failed = _dispatch_workflow("job_scanner.yml")
+    if failed:
+        return failed.replace("Başlamadı", "Skan başlamadı").replace("Bunu başlatmaq", "Skanı başlatmaq")
     return "Skan başladı. Uyğun elanlar bitəndə bura gələcək."
 
 

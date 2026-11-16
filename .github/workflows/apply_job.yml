@@ -1,0 +1,67 @@
+name: Apply to one job
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Vakansiya ID
+        required: true
+        type: string
+      chat_id:
+        description: Telegram söhbəti
+        required: true
+        type: string
+      message_id:
+        description: Telegram mesajı
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-job
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Restore profile
+        env:
+          PROFILE_JSON: ${{ secrets.PROFILE_JSON }}
+        run: python -c 'import os; from pathlib import Path; Path("profile.json").write_text(os.environ["PROFILE_JSON"], encoding="utf-8")'
+
+      - name: Send the application
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          CHAT_ID: ${{ inputs.chat_id }}
+          MESSAGE_ID: ${{ inputs.message_id }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL_NAME: ${{ secrets.LLM_MODEL_NAME }}
+          MIN_MATCH_SCORE: ${{ secrets.MIN_MATCH_SCORE }}
+          DRY_RUN: ${{ secrets.DRY_RUN }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          FATHER_NAME: ${{ secrets.FATHER_NAME }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATE_FERNET_KEY: ${{ secrets.STATE_FERNET_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python apply_one.py

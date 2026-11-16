@@ -300,6 +300,8 @@ def _run_scan_worker(rescan_existing: bool):
 
 @app.post("/api/step2/scan")
 def start_scan(payload: ScanPayload):
+    if os.getenv("RENDER"):
+        return {"ok": True, "detail": telegram_bot._request_scan()}
     if TASK_STATE["running"]:
         raise HTTPException(status_code=409, detail="Hazırda başqa proses icra olunur.")
     t = threading.Thread(target=_run_scan_worker, args=(payload.rescan_existing,), daemon=True)
@@ -404,6 +406,8 @@ def _run_cv_worker(single_job_id: str | None):
 
 @app.post("/api/step3/generate-cvs")
 def generate_cvs(payload: GenerateCVPayload):
+    if os.getenv("RENDER"):
+        raise HTTPException(status_code=400, detail="CV Telegramdakı Göndər düyməsi ilə hazırlanır.")
     if TASK_STATE["running"]:
         raise HTTPException(status_code=409, detail="Hazırda başqa proses icra olunur.")
     t = threading.Thread(target=_run_cv_worker, args=(payload.job_id,), daemon=True)
