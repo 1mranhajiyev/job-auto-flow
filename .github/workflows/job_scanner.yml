@@ -1,9 +1,6 @@
 name: Auto Job Scanner
 
 on:
-  schedule:
-    # Bakı vaxtı ilə 10:00 və 16:00 (UTC+4)
-    - cron: "0 6,12 * * *"
   workflow_dispatch:
 
 permissions:
