@@ -25,6 +25,7 @@ async def _lifespan(_app):
         profiles.restore()
     except Exception as exc:
         print(f"Profillər açılmadı: {exc}")
+        telegram_bot.report_failure("Profil", str(exc))
     telegram_bot.start_poller()
     yield
 
@@ -431,6 +432,7 @@ def _run_scan_worker(rescan_existing: bool, sources: list[str] | None = None):
         telegram_bot.notify_matches(final_jobs, log=log_msg)
     except Exception as e:
         log_msg(f"XƏTA: {e}")
+        telegram_bot.report_failure("Skan", str(e))
     finally:
         telegram_bot.SCAN_BUSY.clear()
         TASK_STATE["running"] = False
@@ -443,7 +445,10 @@ def start_scan(payload: ScanPayload):
         raise HTTPException(status_code=400, detail="Ən azı bir mənbə seç.")
     if os.getenv("RENDER"):
         manual = payload.sources is not None
-        return {"ok": True, "detail": telegram_bot._request_scan(picked if manual else None)}
+        detail = telegram_bot._request_scan(picked if manual else None)
+        if not detail.startswith("Skan başladı") and not detail.startswith("Skan artıq gedir"):
+            telegram_bot.report_failure("Skan", detail)
+        return {"ok": True, "detail": detail}
     if TASK_STATE["running"]:
         raise HTTPException(status_code=409, detail="Hazırda başqa proses icra olunur.")
     t = threading.Thread(target=_run_scan_worker, args=(payload.rescan_existing, picked), daemon=True)
@@ -543,6 +548,7 @@ def _run_cv_worker(single_job_id: str | None):
         log_msg(f"Tamamlandı! {len(targets)} vakansiya üçün fərdi PDF CV və məktub hazırlandı.")
     except Exception as e:
         log_msg(f"CV Xətası: {e}")
+        telegram_bot.report_failure("CV", str(e))
     finally:
         TASK_STATE["running"] = False
 
@@ -567,8 +573,10 @@ def _watch_prepared_cvs(job_ids: list[str]):
                 log_msg("CV və məktub hazırdır.")
                 return
         log_msg("CV hələ hazır deyil. Bir az sonra səhifəni yenilə.")
+        telegram_bot.report_failure("CV", "20 dəqiqə içində hazır olmadı.")
     except Exception as exc:
         log_msg(f"CV izlənmədi: {exc}")
+        telegram_bot.report_failure("CV", str(exc))
     finally:
         TASK_STATE["running"] = False
         _REMOTE_JOBS["at"] = 0.0
@@ -592,6 +600,7 @@ def generate_cvs(payload: GenerateCVPayload):
             {"job_ids": ",".join(job["id"] for job in targets)},
         )
         if failed:
+            telegram_bot.report_failure("CV", failed)
             raise HTTPException(status_code=400, detail=failed)
         job_ids = [job["id"] for job in targets]
         TASK_STATE.update({
@@ -646,6 +655,7 @@ def execute_send_and_export(payload: SendPayload):
                 status = f"Email Error: {str(e)[:50]}"
                 channel = "email"
                 target = hr_email
+                telegram_bot.report_failure("Göndəriş", f"{j.get('company', '')}: {e}")
         else:
             status = "CV Ready (Manual Apply)" if (pdf_path and pdf_path.exists()) else "Selected (No CV)"
             channel = "manual"

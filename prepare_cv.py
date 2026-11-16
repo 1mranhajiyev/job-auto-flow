@@ -10,6 +10,7 @@ import re
 import main
 import profiles
 import state_sync
+import telegram_bot
 from playwright.sync_api import sync_playwright
 
 
@@ -72,5 +73,16 @@ def main_run():
         prepare(jobs[job_id])
 
 
+def _main():
+    try:
+        main_run()
+    except (SystemExit, Exception) as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        if telegram_bot.report_failure("CV", detail):
+            from pathlib import Path
+            Path("failure-reported").write_text("1", encoding="utf-8")
+        raise
+
+
 if __name__ == "__main__":
-    main_run()
+    _main()

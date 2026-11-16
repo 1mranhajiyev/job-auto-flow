@@ -38,6 +38,25 @@ def enabled() -> bool:
     return bool(token() and chat_id())
 
 
+def report_failure(process: str, detail: str) -> bool:
+    """Proses alınmayanda xətanı JobFlow söhbətinə yazır."""
+    text = f"⚠️ <b>{_html(process)} alınmadı</b>\n{_html(str(detail))[:700]}"
+    if not enabled():
+        print(f"{process} alınmadı: {detail}")
+        return False
+    try:
+        _api("sendMessage", {
+            "chat_id": chat_id(),
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        })
+        return True
+    except Exception as exc:
+        print(f"Xəta bildirişi getmədi: {exc}")
+        return False
+
+
 def _api(method: str, payload: dict | None = None, timeout: int = 20) -> dict:
     url = f"https://api.telegram.org/bot{token()}/{method}"
     data = json.dumps(payload or {}).encode()
@@ -522,3 +541,4 @@ def start_poller():
         _listen()
     except Exception as exc:
         print(f"Telegram dinləyicisi açılmadı: {exc}")
+        report_failure("Telegram", str(exc))

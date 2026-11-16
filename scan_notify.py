@@ -114,6 +114,7 @@ def run():
             browser.close()
 
     sent = 0
+    missed = []
     for job in fresh:
         urls = [str(url).rstrip("/") for url in (job.get("job_urls") or [job.get("job_url")]) if url]
         if not urls:
@@ -130,10 +131,10 @@ def run():
         try:
             delivered = telegram_bot.notify_job(job)
         except Exception as exc:
-            print(f"Bildiriş getmədi, növbəti skanda yenidən cəhd ediləcək: {job.get('title', '')[:60]} ({exc})")
+            missed.append(f"{job.get('title', '')[:60]}: {exc}")
             continue
         if not delivered:
-            print(f"Bildiriş getmədi, növbəti skanda yenidən cəhd ediləcək: {job.get('title', '')[:60]}")
+            missed.append(str(job.get("title") or "")[:60])
             continue
         pending.append(job)
         seen.update(urls)
@@ -142,7 +143,19 @@ def run():
 
     state_sync.save({"seen_urls": sorted(seen), "jobs": pending})
     print(f"Skan bitdi. Telegram bildirişi: {sent}.")
+    if missed:
+        telegram_bot.report_failure("Skan bildirişi", "\n".join(missed[:8]))
+
+
+def _main():
+    try:
+        run()
+    except (SystemExit, Exception) as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        if telegram_bot.report_failure("Skan", detail):
+            Path("failure-reported").write_text("1", encoding="utf-8")
+        raise
 
 
 if __name__ == "__main__":
-    run()
+    _main()

@@ -161,13 +161,15 @@ Bot JobFlow adlanır.
 
 Webhook Render-ə bağlıdır. Lokal proqramı webhook ünvanı boş halda işə salmaq canlı botu özünə götürür.
 
+Skan, CV, göndəriş və ya gündəlik poçt yoxlaması alınmayanda JobFlow-a xəta mətni gəlir.
+
 ## Gələn məktublar
 
-`scripts/job_flow_mail_notifier.gs` Gmail-də ayrıca işləyir. Son 1 günün oxunmamış gələn məktublarına baxır. Gemini müsahibə, texniki tapşırıq, qəbul və ya imtina görsə, xülasəni JobFlow-a göndərir və məktubu oxunmuş edir.
+`scripts/job_flow_mail_notifier.gs` məktubu qəbul edən Gmail hesabında işləyir. Hər gün saat 21:00 civarında yalnız həmin günün oxunmamış məktublarına baxır. Gemini müsahibə, texniki tapşırıq, qəbul və ya imtina görsə, xülasəni JobFlow-a göndərir.
 
 ```mermaid
 flowchart TD
-  A[Hər 15 dəqiqə] --> B{Oxunmamış gələn məktub?}
+  A[Hər gün saat 21:00] --> B{Bu günün oxunmamış məktubu?}
   B -->|yox| Z[Dayan]
   B -->|hə| C{Öz məktubun, reklam və ya artıq yoxlanıb?}
   C -->|hə| Z
@@ -187,7 +189,7 @@ Skripti [script.google.com](https://script.google.com) layihəsinə yapışdır�
 | `TELEGRAM_CHAT_ID` | Bildiriş gedən söhbət |
 | `GEMINI_API_KEY` | Google AI Studio açarı |
 
-Sonra redaktorda bir dəfə `installTrigger` funksiyasını işə salın. Gmail, xarici sorğu və trigger icazəsini təsdiqləyin. `NO` cavabı məktubu oxunmuş etmir, `JobFlow/yox` etiketi qoyur ki, növbəti yoxlama eyni reklamı yenidən modelə verməsin. Telegram alınmasa məktub oxunmamış qalır və təkrar yoxlanır.
+Sonra redaktorda bir dəfə `installTrigger` funksiyasını işə salın. Gmail, xarici sorğu və trigger icazəsini təsdiqləyin. Skript məktubu qəbul edən hesabda işləməlidir. `NO` cavabı `JobFlow/yox` etiketi qoyur. Uğurlu bildiriş `JobFlow/gonderildi` etiketi qoyur. Telegram alınmasa etiket yazılmır və növbəti yoxlama təkrar cəhd edir.
 
 ## GitHub tokeni
 
