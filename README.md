@@ -17,10 +17,10 @@ flowchart LR
   end
 
   S2 -->|seçilmiş mənbələr| Scan[GitHub Actions skan]
-  TG[/scan və /run] -->|bütün mənbələr| Scan
+  TG[scan və run] -->|bütün mənbələr| Scan
   Scan --> Portallar[12 vakansiya saytı]
   Portallar --> LLM[Uyğunluq]
-  LLM --> TGBot[Telegram: Göndər və ya Keç]
+  LLM --> TGBot[Telegram Göndər və ya Keç]
   S3 --> CV[GitHub Actions CV]
   TGBot -->|Göndər| Apply[GitHub Actions göndəriş]
   S4 --> Apply
@@ -38,7 +38,7 @@ Skan və CV hazırlığı e-poçt göndərmir. Məktub `DRY_RUN` söndürüldük
 ```mermaid
 flowchart TB
   User[İstifadəçi]
-  Render[Render: FastAPI sayt]
+  Render[Render FastAPI sayt]
   GH[GitHub Actions]
   State[job-state budağı]
   Bot[Telegram JobFlow]
@@ -48,7 +48,7 @@ flowchart TB
   User --> Bot
   Render -->|workflow dispatch| GH
   Bot -->|workflow dispatch| GH
-  GH -->|şifrəli state.json.enc| State
+  GH -->|şifrəli state| State
   Render -->|oxu və yaz| State
   GH --> Bot
   Gmail -->|müsahibə və HR cavabı| Bot
@@ -169,13 +169,13 @@ Skan, CV, göndəriş və ya gündəlik poçt yoxlaması alınmayanda JobFlow-a 
 
 ```mermaid
 flowchart TD
-  A[Hər gün saat 21:00] --> B{Bu günün oxunmamış məktubu?}
+  A[Hər gün saat 21] --> B{Bu günün oxunmamış məktubu}
   B -->|yox| Z[Dayan]
-  B -->|hə| C{Öz məktubun, reklam və ya artıq yoxlanıb?}
+  B -->|hə| C{Öz məktubun və ya reklam}
   C -->|hə| Z
   C -->|yox| D[Gemini]
   D -->|xəta| E[Növbəti dəfə yenidən bax]
-  D -->|NO| F[JobFlow/yox etiketi]
+  D -->|NO| F[JobFlow yox etiketi]
   D -->|YES| G[Telegram]
   G -->|göndərildi| H[Oxunmuş et]
   G -->|alınmadı| E
