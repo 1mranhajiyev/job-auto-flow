@@ -92,6 +92,8 @@ def jobs_for_page() -> tuple[list, str]:
             continue
         base = merged.get(job["id"], {})
         combined = {**base, **job}
+        if base.get("profile_slug"):
+            combined["profile_slug"] = base["profile_slug"]
         if base.get("cv_ready") and not job.get("cv_ready"):
             for key in ("cv_ready", "pdf_b64", "pdf_url", "pdf_path", "cover_letter", "email_subject", "status"):
                 if base.get(key):
@@ -99,8 +101,7 @@ def jobs_for_page() -> tuple[list, str]:
         merged[job["id"]] = combined
     jobs = [_materialize_cv(job) for job in merged.values()]
     slug = profiles.active_slug()
-    if slug:
-        jobs = [job for job in jobs if not job.get("profile_slug") or job.get("profile_slug") == slug]
+    jobs = [job for job in jobs if profiles.owns(job, slug)]
     jobs.sort(key=lambda job: int(job.get("match_score") or 0), reverse=True)
     if remote and not local:
         stored = []

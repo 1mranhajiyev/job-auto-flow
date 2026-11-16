@@ -203,7 +203,8 @@ def _find_job(job_id: str) -> dict | None:
     return None
 
 
-def _patch_local(job_id: str, **fields) -> dict | None:
+def _patch_local(job_id: str, owner: str = "", **fields) -> dict | None:
+    import profiles
     path = _state_path()
     with STATE_LOCK:
         if not path.exists():
@@ -213,28 +214,38 @@ def _patch_local(job_id: str, **fields) -> dict | None:
         except Exception:
             return None
         found = None
+        kept = []
+        active = profiles.active_slug()
         for job in state.get("jobs", []):
-            if job.get("id") == job_id:
-                job.update(fields)
+            if job.get("id") != job_id:
+                kept.append(job)
+                continue
+            job.update(fields)
+            job_owner = owner or str(job.get("profile_slug") or "")
+            if active and job_owner and job_owner != active:
                 found = job
-                break
+                continue
+            if job_owner:
+                job["profile_slug"] = job_owner
+            kept.append(job)
+            found = job
         if found:
+            state["jobs"] = kept
             path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-        return found
+        return found if found and profiles.owns(found, active) else None
 
 
 def _patch_job(job_id: str, **fields) -> dict | None:
-    found = _patch_local(job_id, **fields)
-    if found:
-        return found
     import state_sync
-    if not state_sync.enabled():
-        return None
-    try:
-        return state_sync.patch_job(job_id, **fields)
-    except Exception as exc:
-        print(f"Uzaq siyahı yenilənmədi: {exc}")
-        return None
+    remote = None
+    if state_sync.enabled():
+        try:
+            remote = state_sync.patch_job(job_id, **fields)
+        except Exception as exc:
+            print(f"Uzaq siyahı yenilənmədi: {exc}")
+    owner = str((remote or {}).get("profile_slug") or "")
+    local = _patch_local(job_id, owner, **fields)
+    return remote or local
 
 
 def _answer(callback_id: str, text: str):

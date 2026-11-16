@@ -26,6 +26,15 @@ def active_slug() -> str:
     return ""
 
 
+def owns(job: dict, slug: str = "") -> bool:
+    """Elan yalnız öz profilinin səhifəsində görünür."""
+    slug = slug if slug else active_slug()
+    owner = str(job.get("profile_slug") or "")
+    if not slug:
+        return not owner
+    return owner == slug
+
+
 def set_active(slug: str):
     DIR.mkdir(exist_ok=True)
     ACTIVE.write_text(slug.strip(), encoding="utf-8")
