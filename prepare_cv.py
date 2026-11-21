@@ -62,21 +62,20 @@ def prepare(job: dict):
             main.render_tailored_pdf(browser, profile, tailored, pdf_file)
         finally:
             browser.close()
-    encoded = base64.b64encode(pdf_file.read_bytes()).decode()
-    try:
-        state_sync.patch_job(
-            job["id"],
-            cv_ready=True,
-            pdf_b64=encoded,
-            pdf_path=str(pdf_file),
-            pdf_url=f"/output/{pdf_file.name}",
-            email_subject=tailored.get("email_subject") or f"Müraciət: {job.get('title')}",
-            cover_letter=tailored.get("cover_letter") or "",
-            status="CV Hazırdır",
-        )
-    except Exception as exc:
-        print(f"! State_sync yazılmadı (yalnız local): {exc}")
-    print(f"CV hazırdır: {job.get('company')} — {job.get('title')}")
+    encoded = pdf_file.read_bytes()
+    asset_name = f"output/{job['id']}.pdf"
+    state_sync.save_binary(asset_name, encoded)
+    state_sync.patch_job(
+        job["id"],
+        cv_ready=True,
+        pdf_asset=asset_name,
+        pdf_path=str(pdf_file),
+        pdf_url=f"/output/{pdf_file.name}",
+        email_subject=tailored.get("email_subject") or f"Application: {job.get('title')}",
+        cover_letter=tailored.get("cover_letter") or "",
+        status="CV Ready",
+    )
+    print(f"CV ready: {job.get('company')} — {job.get('title')}")
     return pdf_file
 
 
@@ -90,9 +89,23 @@ def main_run():
     missing = [job_id for job_id in ids if job_id not in jobs]
     if missing:
         raise SystemExit("Elan tapılmadı: " + ", ".join(missing))
+    errors = []
     for job_id in ids:
-        pdf_file = prepare(jobs[job_id])
-        _deliver(jobs[job_id], pdf_file)
+        try:
+            pdf_file = prepare(jobs[job_id])
+            _deliver(jobs[job_id], pdf_file)
+        except Exception as exc:
+            detail = str(exc).strip() or exc.__class__.__name__
+            print(f"! CV hazırlanmadı {job_id}: {detail}")
+            errors.append(f"{job_id}: {detail[:120]}")
+            try:
+                state_sync.patch_job(job_id, status=f"CV error: {detail[:80]}")
+            except Exception:
+                pass
+    if errors:
+        if len(errors) >= len(ids):
+            raise SystemExit("Heç bir CV hazırlanmadı: " + ", ".join(errors[:3]))
+        telegram_bot.report_failure("CV (qismən)", "\n".join(errors[:5]))
 
 
 def _deliver(job: dict, pdf_file):

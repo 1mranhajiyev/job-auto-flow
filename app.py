@@ -119,16 +119,34 @@ def jobs_for_page() -> tuple[list, str]:
 def _materialize_cv(job: dict) -> dict:
     item = dict(job)
     encoded = item.pop("pdf_b64", None)
-    if not encoded:
+    raw = None
+    if encoded:
+        try:
+            raw = base64.b64decode(encoded)
+        except Exception:
+            raw = None
+    if raw is None and item.get("pdf_asset"):
+        raw = _fetch_asset_bytes(item["pdf_asset"])
+    if not raw:
         return item
     name = Path(str(item.get("pdf_url") or f"/output/CV_{item.get('id')}.pdf")).name
     dest = main.OUTPUT_DIR / name
     if not dest.exists():
-        dest.write_bytes(base64.b64decode(encoded))
+        dest.write_bytes(raw)
     item["pdf_path"] = str(dest)
     item["pdf_url"] = f"/output/{dest.name}"
     item["cv_ready"] = True
     return item
+
+
+def _fetch_asset_bytes(rel_path: str) -> bytes | None:
+    try:
+        import state_sync
+        if state_sync.enabled():
+            return state_sync.load_binary(rel_path)
+    except Exception as exc:
+        print(f"PDF asset açılmadı: {exc}")
+    return None
 
 
 def load_state() -> dict:
@@ -540,9 +558,9 @@ def _run_cv_worker(single_job_id: str | None):
                 j["cv_ready"] = True
                 j["pdf_path"] = str(pdf_file)
                 j["pdf_url"] = f"/output/{pdf_file.name}"
-                j["email_subject"] = tailored.get("email_subject", f"Müraciət: {j['title']}")
+                j["email_subject"] = tailored.get("email_subject", f"Application: {j['title']}")
                 j["cover_letter"] = tailored.get("cover_letter", "")
-                j["status"] = "CV Hazırdır"
+                j["status"] = "CV Ready"
                 save_state(state)
 
             browser.close()

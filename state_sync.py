@@ -164,6 +164,10 @@ def _slim(state: dict) -> dict:
         else:
             item = dict(job)
             item.pop("_store", None)
+            # PDF faylı ayrıca şifrəli asset kimi saxlanır (state.json.enc şişməsin).
+            item.pop("pdf_b64", None)
+            if item.get("cv_ready"):
+                item.pop("raw_text", None)
             jobs.append(item)
     result = {
         "seen_urls": sorted({str(url).rstrip("/") for url in (state.get("seen_urls") or []) if url}),
@@ -196,3 +200,32 @@ def seed_seen_urls(urls: list[str]):
     state.setdefault("jobs", [])
     save(state)
     return len(state["seen_urls"])
+
+
+def save_binary(rel_path: str, data: bytes) -> None:
+    """PDF kimi böyük faylı state-i şişirtmədən ayrıca şifrəli saxlayır."""
+    if not enabled():
+        raise RuntimeError("Şifrəli vəziyyət bağlıdır: STATE_FERNET_KEY və ya GitHub tokeni yoxdur.")
+    token = _fernet().encrypt(data).decode()
+    content = base64.b64encode(token.encode()).decode()
+    with LOCK:
+        _ensure_branch()
+        item = _api(f"/repos/{_repo()}/contents/{rel_path}?ref={BRANCH}")
+        payload = {"message": "Update asset", "content": content, "branch": BRANCH}
+        if item and item.get("sha"):
+            payload["sha"] = item["sha"]
+        saved = _api(f"/repos/{_repo()}/contents/{rel_path}", "PUT", payload)
+        if saved is None:
+            raise RuntimeError("Asset yazılmadı")
+
+
+def load_binary(rel_path: str) -> bytes | None:
+    if not enabled():
+        return None
+    with LOCK:
+        item = _api(f"/repos/{_repo()}/contents/{rel_path}?ref={BRANCH}")
+    if not item or not item.get("content"):
+        return None
+    encoded = "".join(item["content"].split())
+    token = base64.b64decode(encoded).decode()
+    return _fernet().decrypt(token.encode())

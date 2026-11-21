@@ -1280,23 +1280,23 @@ def tailor_single_job(profile: dict, job: dict) -> dict:
     usr_p = f"""Vakansiya təsvirini dərindən analiz et və namizədin BÜTÜN CV məzmununu həmin təsvirə uyğunlaşdır.
 
 VACİB QAYDALAR:
-1. Vahid dil: Vakansiya təsvirinin dilini müəyyən et (Azərbaycan və ya İngilis dili). CV-nin bütün bölmə başlıqları, xülasəsi, iş təcrübəsi bəndləri və cover letter EYNİ dildə olmalıdır.
+1. Vahid dil — YALNIZ İNGİLİS: CV-nin və cover letter-in BÜTÜN mətni (bölmə başlıqları, xülasə, iş təcrübəsi bəndləri, təhsil, dillər və email subject) YALNIZ İngilis (English) dilində olsun. Azərbaycan dili istifadə etmə.
 2. Description-a uyğun iş təcrübəsi: Vakansiyada tələb olunan əsas bacarıqları namizədin real iş təcrübəsi bəndlərində önə çək.
 3. Rəqəm və fakt dəqiqliyi: Heç bir saxta rəqəm uydurma. '115%' yazma, real göstəricini ('96%' / '6 saatdan 15 dəqiqəyə') işlət.
 4. Səliqə: CV 1 tam A4 səhifəsinə sığsın. Bəndlərin əvvəlinə '•' və ya '-' işarəsi QOYMA.
 
 JSON formatı:
 {{
-  "language": "az|en",
+  "language": "en",
   "headers": {{
-    "summary": "PEŞƏKAR XÜLASƏ və ya PROFESSIONAL SUMMARY",
-    "skills": "ƏSAS BACARIQLAR və ya KEY SKILLS",
-    "experience": "İŞ TƏCRÜBƏSİ və ya EXPERIENCE",
-    "education": "TƏHSİL və ya EDUCATION",
-    "languages": "DİLLƏR və ya LANGUAGES"
+    "summary": "PROFESSIONAL SUMMARY",
+    "skills": "KEY SKILLS",
+    "experience": "EXPERIENCE",
+    "education": "EDUCATION",
+    "languages": "LANGUAGES"
   }},
   "email_subject": "",
-  "cover_letter": "HR-a göndəriləcək peşəkar məktub (vakansiyanın dilində)",
+  "cover_letter": "Professional application cover letter to HR (in English)",
   "tailored_summary": "Vakansiya təsvirinə uyğunlaşdırılmış 3-4 cümləlik güclü peşəkar xülasə",
   "highlighted_skills": ["Vakansiya təsvirindəki açar sözlərə uyğun 12-15 bacarıq/alət"],
   "tailored_experience": [
@@ -1307,8 +1307,8 @@ JSON formatı:
       "highlights": ["Vakansiya təsvirinə uyğunlaşdırılmış təmiz bəndlər"]
     }}
   ],
-  "education_text": "Təhsil məlumatı (vakansiyanın dilində)",
-  "languages_text": "Dil bilikləri (vakansiyanın dilində)"
+  "education_text": "Education details (in English)",
+  "languages_text": "Languages (in English)"
 }}
 
 NAMİZƏD PROFİLİ:

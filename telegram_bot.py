@@ -336,9 +336,9 @@ def _ensure_cv(job: dict) -> dict:
         cv_ready=True,
         pdf_path=str(pdf_file),
         pdf_url=f"/output/{pdf_file.name}",
-        email_subject=tailored.get("email_subject") or f"Müraciət: {job.get('title')}",
+        email_subject=tailored.get("email_subject") or f"Application: {job.get('title')}",
         cover_letter=tailored.get("cover_letter") or "",
-        status="CV Hazırdır",
+        status="CV Ready",
     ) or job
 
 
@@ -349,6 +349,16 @@ def _pdf_bytes(job: dict) -> bytes | None:
             return base64.b64decode(encoded)
         except Exception:
             return None
+    asset = job.get("pdf_asset")
+    if asset:
+        import state_sync
+        try:
+            if state_sync.enabled():
+                data = state_sync.load_binary(asset)
+                if data:
+                    return data
+        except Exception as exc:
+            print(f"PDF asset açılmadı: {exc}")
     path = Path(job["pdf_path"]) if job.get("pdf_path") else None
     if path and path.exists():
         return path.read_bytes()
@@ -448,7 +458,7 @@ def _approve(job_id: str, message: dict):
         _prepare_download(job_id, message)
         return
     status = str(job.get("status") or "")
-    if status.startswith(("Applied", "Dry-Run", "Keçildi", "CV hazırdır")):
+    if status.startswith(("Applied", "Dry-Run", "Keçildi", "CV Ready")):
         _edit(message, _job_message(job) + f"\n\n<b>{_html(status)}</b>")
         return
     if os.getenv("RENDER"):
@@ -475,7 +485,7 @@ def _approve(job_id: str, message: dict):
         try:
             result = main.apply_via_email(
                 email,
-                job.get("email_subject") or f"Müraciət: {job.get('title')}",
+                job.get("email_subject") or f"Application: {job.get('title')}",
                 job.get("cover_letter") or "",
                 pdf,
             )
