@@ -74,9 +74,21 @@ def is_valid_hr_email(email: str) -> bool:
 
 
 def clean_json(raw: str):
-    raw = raw.strip()
+    raw = (raw or "").strip()
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
+    raw = raw.strip()
+    if not raw:
+        raise json.JSONDecodeError("Boş model cavabı", "", 0)
+
+    # LLM bəzən izahlı mətn + JSON, və ya JSON-dan sonra əlavə mətn qaytarır.
+    # Hər `{` və ya `[` mövqeyindən ilk tam JSON dəyərini çıxarmağa çalışırıq.
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"[\[{]", raw):
+        try:
+            return decoder.raw_decode(raw[match.start():])[0]
+        except json.JSONDecodeError:
+            continue
     return json.loads(raw)
 
 
