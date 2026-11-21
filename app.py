@@ -106,14 +106,13 @@ def jobs_for_page() -> tuple[list, str]:
     slug = profiles.active_slug()
     jobs = [job for job in jobs if profiles.owns(job, slug)]
     jobs.sort(key=lambda job: int(job.get("match_score") or 0), reverse=True)
-    if remote and not local:
+    if remote:
         stored = []
         for job in jobs:
             item = dict(job)
             item.pop("pdf_b64", None)
             stored.append(item)
         save_state({"jobs": stored})
-        _REMOTE_JOBS["jobs"] = jobs
     return jobs, "" if jobs else note
 
 

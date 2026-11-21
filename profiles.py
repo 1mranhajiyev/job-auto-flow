@@ -27,12 +27,12 @@ def active_slug() -> str:
 
 
 def owns(job: dict, slug: str = "") -> bool:
-    """Elan yalnız öz profilinin səhifəsində görünür."""
+    """Elan yalnız öz profilinin səhifəsində görünür. Boş profil etiketli elanlar aktiv profilə aid sayılır."""
     slug = slug if slug else active_slug()
     owner = str(job.get("profile_slug") or "")
     if not slug:
         return not owner
-    return owner == slug
+    return not owner or owner == slug
 
 
 def set_active(slug: str):
