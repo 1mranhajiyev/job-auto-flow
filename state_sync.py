@@ -166,8 +166,6 @@ def _slim(state: dict) -> dict:
             item.pop("_store", None)
             # PDF faylı ayrıca şifrəli asset kimi saxlanır (state.json.enc şişməsin).
             item.pop("pdf_b64", None)
-            if item.get("cv_ready"):
-                item.pop("raw_text", None)
             jobs.append(item)
     result = {
         "seen_urls": sorted({str(url).rstrip("/") for url in (state.get("seen_urls") or []) if url}),
