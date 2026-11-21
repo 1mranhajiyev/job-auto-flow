@@ -30,21 +30,21 @@ def _browser_kwargs() -> dict:
 
 
 def _find_profile_for_job(job: dict):
-    """Elanın profilini tapır: əvvəl profile_slug, sonra aktiv profil, sonra root profile."""
-    slug = str(job.get("profile_slug") or "")
-    if slug:
-        cache = profiles.profile_file(slug)
-        if cache.exists():
-            return slug, cache
+    """CV hazırlanarkən əvvəl aktiv (ən təzə) profili, sonra elanın profilini istifadə edir."""
     active = profiles.active_slug()
     if active:
         cache = profiles.profile_file(active)
         if cache.exists():
             return active, cache
+    slug = str(job.get("profile_slug") or "")
+    if slug:
+        cache = profiles.profile_file(slug)
+        if cache.exists():
+            return slug, cache
     root = profiles.profile_file()
     if root.exists():
         return "", root
-    raise SystemExit(f"Bu elanın profili tapılmadı: {slug or active or 'aktiv profil'}")
+    raise SystemExit(f"Bu elanın profili tapılmadı: {active or slug or 'aktiv profil'}")
 
 
 def prepare(job: dict):

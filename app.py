@@ -529,7 +529,7 @@ def _run_cv_worker(single_job_id: str | None):
                 pct = 10 + int((idx / len(targets)) * 85)
                 TASK_STATE["progress"] = pct
                 log_msg(f"CV hazırlanır ({idx + 1}/{len(targets)}): {j['company']} — {j['title']}")
-                slug = str(j.get("profile_slug") or "")
+                slug = profiles.active_slug() or str(j.get("profile_slug") or "")
                 profile = main.analyze_cv("cv.pdf", slug=slug)
 
                 tailored = main.tailor_single_job(profile, j)

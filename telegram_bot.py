@@ -310,8 +310,8 @@ def _ensure_cv(job: dict) -> dict:
     pdf = Path(job["pdf_path"]) if job.get("pdf_path") else None
     if job.get("cv_ready") and pdf and pdf.exists() and job.get("cover_letter"):
         return job
-    slug = str(job.get("profile_slug") or "")
     import profiles
+    slug = profiles.active_slug() or str(job.get("profile_slug") or "")
     pdf = profiles.cv_file(slug)
     profile = main.analyze_cv(str(pdf if pdf.exists() else "cv.pdf"), slug=slug)
     from playwright.sync_api import sync_playwright
