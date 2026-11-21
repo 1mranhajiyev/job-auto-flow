@@ -43,6 +43,11 @@ PORTAL_EMAIL_BLACKLIST = [
     "info@smartjob",
     "info@busy.az",
     "info@ejob.az",
+    "info@work",
+    "info@hrin",
+    "info@azerweb",
+    "info@azvak",
+    "info@humanpro",
     "support@",
     "noreply",
     "no-reply",
@@ -50,6 +55,27 @@ PORTAL_EMAIL_BLACKLIST = [
     ".jpg",
     ".svg",
 ]
+
+# Vakansiya saytlarının öz domenləri. Bu domenlərdən gələn e-poçtlar
+# (info@work.az və s.) saytın öz e-poçtudur, şirkət e-poçtu deyil.
+PORTAL_DOMAINS = (
+    "glorri.az",
+    "hellojob.az",
+    "smartjob.az",
+    "busy.az",
+    "ejob.az",
+    "jobsearch.az",
+    "work.az",
+    "boss.az",
+    "hrin.az",
+    "azerweb.az",
+    "azvak.az",
+    "humanpro.az",
+)
+
+
+def _is_portal_domain(domain: str) -> bool:
+    return any(domain == d or domain.endswith("." + d) for d in PORTAL_DOMAINS)
 
 DOMAIN_KEYWORDS = [
     "data", "analitik", "analyst", "hesabat", "report", "bi", "power bi",
@@ -69,6 +95,8 @@ IGNORE_URL_PARTS = [
 def is_valid_hr_email(email: str) -> bool:
     e = email.strip().lower()
     if "@" not in e or "." not in e.split("@")[-1]:
+        return False
+    if _is_portal_domain(e.split("@")[-1]):
         return False
     return not any(bad in e for bad in PORTAL_EMAIL_BLACKLIST)
 
