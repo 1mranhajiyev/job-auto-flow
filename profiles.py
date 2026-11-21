@@ -174,7 +174,7 @@ def restore():
                 if not state_dest.exists() and person.get("state"):
                     state_dest.write_text(json.dumps(person["state"], ensure_ascii=False, indent=2), encoding="utf-8")
             chosen = (library.get("active") or "").strip()
-            if chosen and not active_slug() and (DIR / f"profile_{chosen}.json").exists():
+            if chosen and (DIR / f"profile_{chosen}.json").exists():
                 set_active(chosen)
     except Exception as exc:
         print(f"Profillər bərpa olunmadı: {exc}")
