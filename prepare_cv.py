@@ -29,12 +29,29 @@ def _browser_kwargs() -> dict:
     return launch_kwargs
 
 
-def prepare(job: dict):
+def _find_profile_for_job(job: dict):
+    """Elanın profilini tapır: əvvəl profile_slug, sonra aktiv profil, sonra root profile."""
     slug = str(job.get("profile_slug") or "")
-    cache = profiles.profile_file(slug) if slug else profiles.profile_file()
-    if not cache.exists():
-        raise SystemExit(f"Bu elanın profili tapılmadı: {slug or 'aktiv profil'}")
+    if slug:
+        cache = profiles.profile_file(slug)
+        if cache.exists():
+            return slug, cache
+    active = profiles.active_slug()
+    if active:
+        cache = profiles.profile_file(active)
+        if cache.exists():
+            return active, cache
+    root = profiles.profile_file()
+    if root.exists():
+        return "", root
+    raise SystemExit(f"Bu elanın profili tapılmadı: {slug or active or 'aktiv profil'}")
+
+
+def prepare(job: dict):
+    slug, cache = _find_profile_for_job(job)
     source = profiles.cv_file(slug) if slug else profiles.cv_file()
+    if not source.exists():
+        source = cache
     profile = main.analyze_cv(str(source if source.exists() else cache), slug=slug)
     tailored = main.tailor_single_job(profile, job)
     safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", f"{job.get('company')}_{job.get('title')}")[:50]
@@ -46,16 +63,19 @@ def prepare(job: dict):
         finally:
             browser.close()
     encoded = base64.b64encode(pdf_file.read_bytes()).decode()
-    state_sync.patch_job(
-        job["id"],
-        cv_ready=True,
-        pdf_b64=encoded,
-        pdf_path=str(pdf_file),
-        pdf_url=f"/output/{pdf_file.name}",
-        email_subject=tailored.get("email_subject") or f"Müraciət: {job.get('title')}",
-        cover_letter=tailored.get("cover_letter") or "",
-        status="CV Hazırdır",
-    )
+    try:
+        state_sync.patch_job(
+            job["id"],
+            cv_ready=True,
+            pdf_b64=encoded,
+            pdf_path=str(pdf_file),
+            pdf_url=f"/output/{pdf_file.name}",
+            email_subject=tailored.get("email_subject") or f"Müraciət: {job.get('title')}",
+            cover_letter=tailored.get("cover_letter") or "",
+            status="CV Hazırdır",
+        )
+    except Exception as exc:
+        print(f"! State_sync yazılmadı (yalnız local): {exc}")
     print(f"CV hazırdır: {job.get('company')} — {job.get('title')}")
     return pdf_file
 
