@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/driver.css" />
   <style>
     :root {
       color-scheme: light;
@@ -523,6 +524,7 @@
       <a class="brand" href="/">Job Auto-Flow</a>
       <div class="top-actions">
         <span id="modeBadge" class="mode-badge">Yüklənir</span>
+        <button type="button" onclick="startTour()" class="btn ghost sm">Tur</button>
         <a class="btn ghost sm" href="/api/export/excel">Excel</a>
       </div>
     </header>
@@ -778,6 +780,7 @@
   </div>
   <div id="toast" class="toast" role="status"></div>
 
+<script src="/static/driver.js"></script>
 <script>
   let appState = { profile: {}, sources_text: "", settings: {}, jobs: [], task: {} };
   let currentStep = 1;
@@ -1259,6 +1262,76 @@
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") closePdfModal();
   });
+
+  let tourDriver = null;
+
+  function startTour() {
+    const factory = window.driver && window.driver.js && window.driver.js.driver;
+    if (!factory) {
+      toast("Tur komponenti yüklənməyib.");
+      return;
+    }
+    if (tourDriver) {
+      tourDriver.destroy();
+    }
+    const tabTargets = {
+      "#tab-1": 1,
+      "#tab-2": 2,
+      "#tab-3": 3,
+      "#tab-4": 4,
+    };
+    tourDriver = factory({
+      showProgress: true,
+      animate: true,
+      allowClose: true,
+      overlayOpacity: 0.55,
+      stagePadding: 6,
+      steps: [
+        {
+          element: "#tab-1",
+          popover: {
+            title: "1 · Profil",
+            description: "CV yüklə, namizəd məlumatlarını doldur və uyğunluq həddi ilə mənbə saytlarını seç.",
+            side: "bottom",
+            align: "start",
+          },
+        },
+        {
+          element: "#tab-2",
+          popover: {
+            title: "2 · Vakansiyalar",
+            description: "Skanı başlat, bala görə elanları süz və müraciət etmək istədiklərini seç.",
+            side: "bottom",
+            align: "start",
+          },
+        },
+        {
+          element: "#tab-3",
+          popover: {
+            title: "3 · CV",
+            description: "Seçilmiş elanlar üçün bir səhifəlik fərdi CV və e-poçt məktubu hazırla.",
+            side: "bottom",
+            align: "start",
+          },
+        },
+        {
+          element: "#tab-4",
+          popover: {
+            title: "4 · Göndəriş",
+            description: "Sonda təsdiqlə: e-poçtu olanlara məktub göndərilir, qalanları Excel-ə yazılır.",
+            side: "bottom",
+            align: "start",
+          },
+        },
+      ],
+      onHighlightStarted: (_el, step) => {
+        const target = step && step.element;
+        const stepNo = tabTargets[target];
+        if (stepNo) goStep(stepNo);
+      },
+    });
+    tourDriver.drive();
+  }
 
   goStep(1);
   fetchState();

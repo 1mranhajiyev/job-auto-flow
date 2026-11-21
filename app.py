@@ -37,9 +37,12 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 STATE_FILE = BASE_DIR / "state.json"
 SOURCES_FILE = BASE_DIR / "sources.txt"
 ENV_FILE = BASE_DIR / ".env"
+STATIC_DIR = BASE_DIR / "static"
 
 main.OUTPUT_DIR.mkdir(exist_ok=True)
+STATIC_DIR.mkdir(exist_ok=True)
 app.mount("/output", StaticFiles(directory=str(main.OUTPUT_DIR)), name="output")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 TASK_STATE = {
     "running": False,
