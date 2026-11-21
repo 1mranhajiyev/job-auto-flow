@@ -566,12 +566,16 @@ def _watch_prepared_cvs(job_ids: list[str]):
             time.sleep(12)
             remote = state_sync.load()
             found = [job for job in remote.get("jobs") or [] if job.get("id") in job_ids]
+            if not found:
+                # Vəziyyət anlıq boş görünə bilər (GitHub Actions yazarkən).
+                # Yanlış "0 / N" görüntüsü verməmək üçün bu iterasiyanı atlayırıq.
+                continue
             ready = [job for job in found if job.get("cv_ready")]
             if len(ready) != last_ready:
                 last_ready = len(ready)
                 log_msg(f"CV hazırdır: {len(ready)} / {len(job_ids)}")
             TASK_STATE["progress"] = min(90, 20 + int(70 * len(ready) / max(len(job_ids), 1)))
-            if found and len(ready) >= len(job_ids):
+            if len(ready) >= len(job_ids):
                 _REMOTE_JOBS["at"] = 0.0
                 TASK_STATE["progress"] = 100
                 log_msg("CV və məktub hazırdır.")
