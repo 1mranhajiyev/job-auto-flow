@@ -4,6 +4,46 @@ Azərbaycan vakansiya saytlarını oxuyur, CV-yə uyğun elanları seçir və Te
 
 Canlı sayt: [job-auto-flow.onrender.com](https://job-auto-flow.onrender.com/)
 
+## Sistem mühərrikiyyəti
+
+```mermaid
+flowchart TB
+  subgraph Render["Render (sayt)"]
+    App[app.py · FastAPI veb + Telegram webhook]
+  end
+
+  subgraph GH["GitHub Actions (iş serveri)"]
+    Scan[job_scanner.yml · skan]
+    CV[prepare_cv.yml · CV hazırlama]
+    Apply[apply_job.yml · göndəriş]
+  end
+
+  subgraph State["Şifrəli yaddaş (job-state budağı)"]
+    Enc[state.json.enc · Fernet şifrələndi]
+  end
+
+  subgraph Ext["Xarici xidmətlər"]
+    TG[Telegram JobFlow botu]
+    SMTP[SMTP e-poçt]
+    Gmail[Gmail Apps Script]
+    LLM[LLM (Gemini)]
+    Excel[(applications.xlsx)]
+  end
+
+  App -->|webhook| TG
+  App -->|workflow dispatch| GH
+  App <-->|oxu və yaz| Enc
+  GH -->|şifrəli state| Enc
+  Scan -->|12 sayt| LLM
+  LLM --> TG
+  CV --> TG
+  Apply --> SMTP
+  Apply --> Excel
+  Gmail -->|HR cavabı| TG
+```
+
+Skan, CV hazırlama və göndəriş **yalnız GitHub Actions-da** gedir, çünki Render-in pulsuz planında Chromium brauzer sığmır. E-poçt yalnız `DRY_RUN=false` olmaqla və uitsə gedir.
+
 ## Axın
 
 ```mermaid
