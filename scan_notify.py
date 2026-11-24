@@ -96,16 +96,20 @@ def run():
     remote = state_sync.load()
     seen = {str(url).rstrip("/") for url in remote.get("seen_urls") or []}
     pending = list(remote.get("jobs") or [])
+    # Saytdan verilən manual skan (seçilmiş mənbələr) nəticələri təzə hesablansın.
+    manual = bool(os.getenv("SCAN_SOURCES", "").strip())
     print(f"Əvvəlki elanlar: {len(seen)}. Yenidən bildirilməyəcək.")
 
     profile = main.analyze_cv("cv.pdf")
+    # Manual skanda köhnə dedup-u atlayıb seçilmiş mənbələri təzədən toplayırıq.
+    skip = set() if manual else seen
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(**_browser_kwargs())
         page = browser.new_page(
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         )
         try:
-            raw_jobs = main.collect_source_jobs(page, profile, _sources(), seen, log=print)
+            raw_jobs = main.collect_source_jobs(page, profile, _sources(), skip, log=print)
             print(f"Yeni vakansiya: {len(raw_jobs)}. Qiymətləndirilir...")
             scores = main.score_jobs_batch(profile, raw_jobs)
             fresh = _build_jobs(raw_jobs, scores, browser)
@@ -139,9 +143,12 @@ def run():
         pending.append(job)
         seen.update(urls)
         sent += 1
-        state_sync.save({"seen_urls": sorted(seen), "jobs": pending})
+        if not manual:
+            state_sync.save({"seen_urls": sorted(seen), "jobs": pending})
 
-    state_sync.save({"seen_urls": sorted(seen), "jobs": pending})
+    # Sayt (manual) skanında nəticə bu skanın təzə siyahısıdır; planlı/Telegram skanında toplanmış siyahı saxlanır.
+    display = fresh if manual else pending
+    state_sync.save({"seen_urls": sorted(seen), "jobs": display})
     print(f"Skan bitdi. Telegram bildirişi: {sent}.")
     if missed:
         telegram_bot.report_failure("Skan bildirişi", "\n".join(missed[:8]))

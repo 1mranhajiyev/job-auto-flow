@@ -93,6 +93,9 @@ def jobs_for_page() -> tuple[list, str]:
     for job in local:
         if not job.get("id"):
             continue
+        if remote and job["id"] not in merged:
+            # Uzaq siyahıda olmayan köhnə lokal nəticəni göstərmə (əvvəlki skan qalıqları).
+            continue
         base = merged.get(job["id"], {})
         combined = {**base, **job}
         if base.get("profile_slug"):
