@@ -19,15 +19,15 @@ flowchart TB
   end
 
   subgraph State["Şifrəli yaddaş (job-state budağı)"]
-    Enc[state.json.enc · Fernet şifrələndi]
+    Enc[state json enc · Fernet şifrələndi]
   end
 
   subgraph Ext["Xarici xidmətlər"]
     TG[Telegram JobFlow botu]
     SMTP[SMTP e-poçt]
     Gmail[Gmail Apps Script]
-    LLM[LLM (Gemini)]
-    Excel[(applications.xlsx)]
+    LLM[LLM Gemini]
+    Excel[[applications.xlsx]]
   end
 
   App -->|webhook| TG
